@@ -1,0 +1,9 @@
+{"event_id":"invalid-fixture-valid","occurred_at":"2026-09-17T10:00:00Z","ingested_at":"2026-09-17T10:00:01Z","source":"fixture","event_type":"login_failed","organization_id":"org-alpha","actor_id":null,"attempted_account":"unknown@example.test","source_ip":null,"outcome":"failure","request_id":"invalid-request-001","schema_version":"1.0","metadata":{}}
+not-json
+[]
+{"event_id":"invalid-missing-fields","occurred_at":"2026-09-17T10:01:00Z","ingested_at":"2026-09-17T10:01:01Z","source":"fixture","event_type":"login_failed","outcome":"failure","request_id":"invalid-request-004","schema_version":"1.0"}
+{"event_id":"invalid-naive-time","occurred_at":"2026-09-17T10:02:00","ingested_at":"2026-09-17T10:02:01Z","source":"fixture","event_type":"login_failed","organization_id":"org-alpha","attempted_account":"user@example.test","outcome":"failure","request_id":"invalid-request-005","schema_version":"1.0"}
+{"event_id":"invalid-ip","occurred_at":"2026-09-17T10:03:00Z","ingested_at":"2026-09-17T10:03:01Z","source":"fixture","event_type":"login_failed","organization_id":"org-alpha","attempted_account":"user@example.test","source_ip":"999.1.1.1","outcome":"failure","request_id":"invalid-request-006","schema_version":"1.0"}
+{"event_id":"invalid-secret","occurred_at":"2026-09-17T10:04:00Z","ingested_at":"2026-09-17T10:04:01Z","source":"fixture","event_type":"login_failed","organization_id":"org-alpha","attempted_account":"user@example.test","outcome":"failure","request_id":"invalid-request-007","schema_version":"1.0","metadata":{"password":"never-log-this"}}
+{"event_id":"invalid-extra-field","occurred_at":"2026-09-17T10:05:00Z","ingested_at":"2026-09-17T10:05:01Z","source":"fixture","event_type":"login_failed","organization_id":"org-alpha","attempted_account":"user@example.test","outcome":"failure","request_id":"invalid-request-008","schema_version":"1.0","client_claimed_actor":"untrusted"}
+

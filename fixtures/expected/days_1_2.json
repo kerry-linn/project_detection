@@ -1,0 +1,51 @@
+{
+  "lines_read": 20,
+  "valid_events": 18,
+  "rejected_records": 2,
+  "event_type_counts": {
+    "access_denied": 3,
+    "document_downloaded": 1,
+    "login_failed": 10,
+    "login_succeeded": 3,
+    "role_changed": 1
+  },
+  "ordered_event_ids": [
+    "evt-001",
+    "evt-002",
+    "evt-003",
+    "evt-004",
+    "evt-005",
+    "evt-006",
+    "evt-007",
+    "evt-010",
+    "evt-011",
+    "evt-008",
+    "evt-009",
+    "evt-012",
+    "evt-013",
+    "evt-014",
+    "evt-015",
+    "evt-016",
+    "evt-017",
+    "evt-020"
+  ],
+  "rejected_lines": {
+    "18": "malformed JSON",
+    "19": "duplicate event_id evt-009"
+  },
+  "hand_checked_r1_scenario_for_days_3_4": {
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "success_event_id": "evt-009",
+    "window_start_inclusive": "2026-09-17T12:50:00Z",
+    "window_end_exclusive": "2026-09-17T13:00:00Z",
+    "qualifying_failure_event_ids": [
+      "evt-004",
+      "evt-005",
+      "evt-006",
+      "evt-007",
+      "evt-008"
+    ],
+    "excluded_out_of_window_event_id": "evt-003"
+  }
+}

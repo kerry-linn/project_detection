@@ -1,0 +1,304 @@
+Security Monitoring and Investigation Platform — Final Roadmap
+Prepared September 17, 2026
+
+PURPOSE AND SCOPE
+
+Build a small document-sharing application, collect its security events, detect suspicious activity with Python, and investigate alerts through a React interface and Splunk.
+
+Primary preparation target: junior security analyst roles that value scripting. Secondary target: junior security automation/software opportunities. This is a portfolio lab, not professional SOC experience or a guarantee of interview readiness.
+
+Use two releases:
+- v0.1: local application, event ingestion, PostgreSQL, two detections, alert evidence, meaningful tests, README and one investigation.
+- v1.0: four detections, paginated API client, Splunk searches, case workflow, CI, cloud-log integration and three investigations.
+
+Start applying with existing experience now. List this project once v0.1 demonstrably works. Describe only completed capabilities.
+
+Time budget: plan approximately 30–45 focused hours for v0.1 with AI assistance, then 30–50 additional hours for v1.0. These are estimates; learning and environment setup may take longer. Two weeks is realistic only if you can devote enough time. Earlier estimates of 20–30 hours were aggressive for the full initial scope. Hours matter more than week labels.
+
+STACK AND DESIGN
+
+React + TypeScript: document interface and investigation UI.
+Python + FastAPI: API and event processing.
+PostgreSQL: users, documents, security events, alerts and analyst notes.
+pytest: behavioral tests.
+Docker Compose: repeatable local environment.
+GitHub Actions: execute tests on changes.
+Splunk/SPL: later log search and comparison with Python detection results.
+AWS S3, IAM and CloudTrail: later cloud practice.
+
+Use one backend codebase. Detection functions should be callable from a CLI and a simple worker. Begin with explicit batch runs, then a scheduled process. Use no Kafka, Kubernetes, Redis, microservices, ML, OCSF, threat-intelligence enrichment, Sysmon or multiple SIEMs in this scope.
+
+Keep the local project fully runnable without AWS or Splunk. Splunk licensing, platform compatibility and available trial features must be checked at installation; do not make your own alert engine depend on paid scheduled-alert features. Manually executing saved SPL searches is sufficient to demonstrate query practice.
+
+APPLICATION MODEL
+
+Seed two organizations with member and administrator accounts, plus a separate lab analyst account. Never commit live credentials. Use seeded fictional users and document text.
+
+Members can read/update their own documents. Organization administrators can manage documents and membership within their organization. Only the lab analyst can access the global event/alert investigation interface. Explicitly test that a normal member or organization admin cannot access global security records.
+
+Use a maintained authentication/password-hashing library or an established identity provider; do not invent cryptography. Choose and document one authentication approach. Keep authorization server-side, even if the UI hides actions.
+
+Start with text documents stored in PostgreSQL. Add actual S3 attachments later. The product is a source of useful security events; avoid spending days on editor polish, invitations, billing or password-reset UX.
+
+PIPELINE
+
+Application routes derive actor identity and outcome on the server and record structured events.
+Trusted fixture/collector ingestion validates external events.
+The batch detector reads events and writes deduplicated alerts with evidence references.
+The investigation API exposes authorized event/alert access.
+React displays the evidence and notes.
+A later export supplies the same events to Splunk.
+
+For successful state-changing operations, aim to record the business change and its audit event together in one database transaction. Denied requests still need durable audit events even when no business change occurs. Describe what happens if logging fails; do not claim the lab has tamper-proof logging.
+
+Do not accept actor identity or success/failure claims from ordinary browser clients. Separate trusted fixture ingestion from normal application routes. Obtain source IP from the actual request or a trusted proxy configuration, not arbitrary user input.
+
+DATA CONTRACT
+
+Suggested event fields:
+- event_id: unique identifier
+- occurred_at: timezone-aware event time normalized to UTC
+- ingested_at: collection time
+- source: application, fixture, or cloudtrail
+- event_type: login_failed, login_succeeded, document_access_denied, document_downloaded, role_changed
+- organization_id
+- actor_id: nullable for failed authentication of an unknown account
+- attempted_account: fictional/canonical login identifier for failed-login correlation; avoid unnecessary personal data
+- target_actor_id: used for role changes
+- source_ip: may be absent; record limitations
+- resource_id: document or resource involved
+- outcome: success, denied, or failure
+- request_id: trace related activity
+- schema_version
+- metadata: narrowly selected useful context
+
+Do not log passwords, access tokens, session cookies or document contents. Sanitize fields and constrain input sizes.
+
+Tables:
+- users: organization and role
+- documents: owner and organization
+- security_events: unique event ID and timestamps
+- alerts: rule ID/version, entity, time range, reason, severity and status
+- alert_events: evidence links
+- case_notes: author, timestamp and note text
+
+Index the event timestamps and grouping fields actually used by queries. Use parameterized SQL or an ORM. Implement one ingestion path with an event-ID uniqueness constraint. Replayed events must not create extra events or alerts.
+
+DETECTION SPECIFICATIONS
+
+Thresholds below are initial lab choices, not validated industry defaults. Make them configurable and explain their tradeoffs.
+
+R1 — Failed logins followed by success (v0.1)
+For each successful login at time t, examine failures for the same organization and canonical account in the preceding ten minutes, excluding the success itself. Alert when there are at least five failures. Group by account; retain source IPs as evidence rather than assuming one IP equals one person.
+A deterministic alert identity can use rule ID/version plus the success event ID.
+Benign case: a user repeatedly mistypes a password.
+Limitations: slow attacks, missing logs, account normalization errors, legitimate shared IPs.
+
+R2 — Repeated denied document access (v0.1)
+For each actor and organization, examine a rolling five-minute interval. Alert when denied access involves at least five distinct document IDs. Repeated requests for one document should not satisfy a distinct-resource threshold.
+Retain denied events and requested resource identifiers without exposing another tenant's document content.
+Benign case: an old client or stale links.
+Define suppression: one open episode per actor/rule, extending evidence within a documented cooldown. Deterministic episode start or a stored episode key should prevent duplicate alerts on replay.
+
+R3 — Privilege change followed by download activity (v1.0)
+Correlate a successful role increase with downloads by the account whose role changed during the following ten minutes. Include both the administrator who changed the role and the affected user in evidence.
+Benign case: an approved administrator workflow.
+A role change alone is not proof of privilege escalation. Document which role transitions count as increases.
+
+R4 — High download volume (v1.0)
+Alert when an actor downloads at least twenty distinct documents within five minutes. Use a distinct-resource count and retain evidence.
+Benign case: an approved export or migration.
+Call this threshold-based detection, not ML or behavioral baselining. It cannot prove exfiltration.
+
+For every rule, document: hypothesis, data source, required fields, grouping, window boundaries, threshold, severity rationale, evidence, deduplication/suppression, benign causes, blind spots and test cases. Use MITRE ATT&CK mapping only where the specific behavior supports it; do not force every application event into a technique.
+
+EVENT-TIME POLICY
+
+v0.1 is a batch lab: sort by occurred_at then event_id for deterministic results. Validate timezone-aware timestamps and reject/quarantine invalid records with a reason. A malformed record should not silently erase the rest of the batch.
+
+For incremental processing, re-evaluate an overlapping lookback, deduplicate events and alerts, and document the late-event allowance. Older events can be handled by an explicit backfill command. Do not claim unlimited late-event handling or exactly-once streaming semantics.
+
+FIRST RELEASE: DAYS 1–14, SUBJECT TO HOURS AVAILABLE
+
+Days 1–2: schema and parser
+Build fictional benign/suspicious JSONL fixtures and a CLI that reads, validates and summarizes them.
+Learn: functions, lists/dictionaries/sets, loops, JSON, file handling, exceptions, datetime and basic tests.
+Done: malformed records are reported; valid records still process; you can explain the schema.
+
+Days 3–4: first detection
+Implement R1 as a small function independent of HTTP and database code.
+Test below/at/above threshold, exact window boundaries, different accounts, different organizations, duplicate records and shuffled input.
+Done: results are deterministic and supported by event IDs.
+Practice: rewrite the aggregation from scratch and change the rule to count distinct source IPs.
+
+Days 5–6: persistence and API
+Add PostgreSQL, migrations/seed data, trusted batch ingestion and protected event/alert reads.
+Done: an API request ingests events, a detector run creates one alert, and repeating it creates no duplicate.
+Learn: schemas, transactions, uniqueness, SQL filters/GROUP BY/JOIN, request validation and HTTP status codes.
+
+Days 7–9: real application events
+Build login, two organizations, document create/read/update and the defined ownership policy.
+Emit login and denied-access events server-side. Add R2.
+Done: simulated activity through actual app routes produces the expected events and alerts.
+Test user A versus user B, cross-organization access, admin scope and analyst-only routes.
+
+Days 10–11: minimal React investigation UI
+Build login, document list/detail and an analyst alert list/detail. Include filters, reason, timestamps and supporting events.
+Done: follow an alert to its raw evidence. Authorization still holds when calling the API directly.
+Keep design simple and avoid dashboard decoration with no investigative use.
+
+Days 12–14: v0.1 release
+Fix failing scenarios, create clean setup/reset instructions, record a 2–3 minute demo, and write one investigation.
+Add basic CI now if easy; otherwise keep repeatable local tests and add CI in the later hardening stage.
+Done: a fresh checkout can reproduce both detections and benign cases without manual database editing.
+Describe the lab accurately on your resume, and keep applying.
+
+CORE EXTENSIONS: WEEKS 3–4, SUBJECT TO HOURS AVAILABLE
+
+API automation:
+Create a Python client for the protected paginated events endpoint. Fetch all pages with a scoped read-only credential, filter events, and output CSV/JSON.
+Practice timeouts, bounded retries for transient failures, Retry-After for rate limits, 401 handling, malformed payloads and checkpoint/restart behavior.
+Do not retry every error forever. Automatically retry writes only with a defined idempotency mechanism.
+Mock failures in tests; demonstrate both successful and interrupted collection.
+Completion: no skipped or duplicated events after a retry/restart on a stable dataset. Document how concurrent new events affect pagination; a cursor with stable ordering is preferable.
+
+Splunk:
+Check a supported install or learning environment and available license features.
+Import/export JSON events with correct event-time interpretation and field extraction.
+Write searches for account activity, failures by account/IP, denied resources and a detection equivalent to R1.
+Compare results against Python on the same fixtures. Explain discrepancies such as fixed time buckets versus rolling windows.
+Completion: saved SPL files, sample results, and one investigation with raw-event evidence. No paid alert scheduling is required for the core project.
+
+Case workflow and remaining rules:
+Add R3/R4, alert status (new/investigating/closed), notes and dispositions (suspicious/benign/inconclusive).
+Track who changes case state. Preserve supporting event links.
+Completion: triage a benign alert and a suspicious alert, explaining your decision and uncertainty.
+
+CLOUD AND FINAL HARDENING: WEEKS 5–6, SUBJECT TO HOURS AVAILABLE
+
+AWS:
+Keep application hosting optional: a local application using a private S3 bucket still provides meaningful cloud integration.
+Add private S3 attachments and server-authorized short-lived presigned access. Restrict IAM to needed actions/resources; keep credentials out of code.
+Collect a CloudTrail management event from a harmless configuration change on your own lab bucket, such as changing versioning. Parse actor, action, time, resource and outcome.
+If you investigate actual S3 object downloads through CloudTrail, explicitly configure the relevant S3 data events and account for their charges. They are not logged by default. An application-issued download URL does not prove the object was downloaded.
+Use fictional data, scoped logging, billing alerts and documented cleanup. Billing alerts are notifications, not a hard spending cap.
+Completion: explain one captured cloud event and correlate it where possible; document attribution limits for presigned requests.
+Do not add another rule merely to inflate the rule count.
+
+Testing and CI:
+Run parser/rule/API/authorization tests on pull requests. Include the fixtures that demonstrate expected behavior, not only tests mirroring implementation.
+Add one useful security scan if time permits, investigate its findings and document one remediation. Turning on a scanner alone is not vulnerability-management experience.
+Record dependency versions for reproducibility; include a sample configuration with no credentials.
+Completion: CI verifies core behavior; setup works; teardown instructions exist; known limitations are explicit.
+
+Final evidence:
+Publish three concise investigation reports: suspicious login, benign denied-access or download alert, and a cloud event.
+Write a one-page threat model describing assets, actors, trust boundaries, likely abuse, controls and residual risks.
+Record one security bug you found and fixed with a regression test.
+Measure only honest lab results: labeled scenarios, event counts, runtime on specified hardware and rule outputs. Do not turn fixture accuracy into an enterprise detection-rate claim.
+
+REPOSITORY CONTENTS
+
+backend/: API, models, authorization and event ingestion
+detections/: pure rule logic and configuration
+scripts/: seed, fixture replay, API collector and event export
+frontend/: document app and analyst views
+tests/: parser, rules, API and authorization cases
+fixtures/: synthetic input and independently specified expected results
+splunk/: SPL queries and setup notes
+docs/: architecture, threat model, investigations and limitations
+README.md: purpose, setup, quick demo, capabilities and status
+.env.example: configuration names and non-secret examples
+compose.yaml: local services
+.github/workflows/: tests
+
+EXAMPLE ENDPOINTS
+
+POST /auth/login
+GET/POST /documents
+GET/PATCH /documents/{id}
+POST /internal/events/batch — collector credential only
+GET /security/events?cursor=... — analyst/scoped collector access
+GET /security/alerts — analyst access
+GET /security/alerts/{id}
+PATCH /security/alerts/{id}
+POST /security/alerts/{id}/notes
+
+These are design suggestions, not requirements to implement every route immediately.
+
+AI WORKFLOW
+
+Use AI for scaffolding, routine UI, explanations, review and debugging hints.
+Work in small feature-sized changes. Request an explanation of the data flow and assumptions before accepting a large change.
+Personally attempt the parser, first rule, a SQL query, API client and one authorization test.
+For each change: run it, inspect actual output, test a benign and an invalid input, then explain what changed and why.
+Keep an engineering log with three lines per session: built; verified; still unclear.
+Rebuild one small component the next day without generated code.
+Do not defer all practice until the project is complete.
+
+INTERVIEW PRACTICE
+
+Four core priorities:
+1. Python parsing and API use.
+2. Logs, SQL and one SIEM query language.
+3. Security reasoning and triage.
+4. Explaining, modifying and debugging your own work.
+
+Per study/build session reserve 30–45 minutes for a no-AI exercise. Looking up library documentation while learning is normal; periodically practice interview conditions.
+Rotate unfamiliar JSONL/CSV parsing, pagination, time-window correlation, SQL/SPL, debugging, endpoint code review and alert investigation.
+A 30–45 minute small exercise is a training target, not a promised employer format.
+
+Supporting fundamentals:
+HTTP/DNS/TCP/UDP, ports and TLS purpose; basic Linux processes/permissions/logs; authentication versus authorization; least privilege; hashing versus encryption versus encoding; SIEM versus EDR; common web flaws and remedies.
+For SOC-specific openings, add one Windows/identity investigation and one phishing investigation outside this project. For AppSec roles, add code review and threat modeling. Follow the actual posting instead of studying every security specialty.
+Prepare three real internship stories: problem solved, debugging or difficult change, collaboration/feedback.
+Use Practical Threat Detection Engineering alongside the relevant stage: hypothesis, telemetry, validation and tuning. Reading is not a prerequisite to starting.
+
+READINESS CHECKLIST
+
+Resume-ready v0.1:
+[ ] Local app and pipeline run from documented setup.
+[ ] Two detections produce evidence-backed results.
+[ ] Access controls work through direct API requests.
+[ ] Benign, suspicious, malformed and duplicate cases are tested.
+[ ] README, short demo and one investigation exist.
+[ ] Claims describe completed lab work only.
+
+Interview-ready for relevant junior roles:
+[ ] Explain the data flow without reading the code.
+[ ] Parse a new dataset and aggregate it independently.
+[ ] Consume a paginated API and handle failures.
+[ ] Write a SQL query and a basic SPL search.
+[ ] Explain an alert, a false positive and a blind spot.
+[ ] Modify a rule or fix a bug without AI providing the solution.
+[ ] Answer basic networking, authentication and Linux questions.
+[ ] Explain your personal internship contributions.
+Meeting this checklist is useful evidence, not a hiring guarantee. Some roles require prior employment experience or tools this project does not cover.
+
+RESUME CLAIMS
+
+Use action + implemented capability + technology + verified scope/result.
+Possible claims, only once true:
+- Python/PostgreSQL pipeline ingesting application audit events, with time-window correlation and evidence-linked alerts.
+- Server-side authorization and regression tests for cross-user and cross-organization document access.
+- SPL searches validating detection results against labeled benign/suspicious scenarios.
+- Paginated API collector with bounded retries, checkpointing and duplicate handling.
+- CloudTrail analysis and least-privilege S3 integration.
+Do not claim production SOC work, proven prevention of breaches, real-time scale, or percentages you did not measure. Select three strong bullets appropriate to the job rather than listing every feature.
+
+FIRST SESSION
+
+Create the repo and Python environment. Define the event schema. Write about 20 fictional events containing a normal login, repeated failures followed by success, another account, an out-of-window event and one malformed line. Write the parser and failed-login counter. Verify the expected result by hand. End with a commit and a short explanation of what the script does.
+
+SOURCE NOTES
+
+AWS documentation confirms that CloudTrail data events are not logged by default, incur additional charges, and include S3 object operations:
+https://docs.aws.amazon.com/awscloudtrail/latest/userguide/logging-data-events-with-cloudtrail.html
+
+Amazon's security-engineer interview guidance includes scripting, code review, threat modeling and fundamentals; it is an example rather than a universal entry-level interview specification:
+https://amazon.jobs/content/en/how-we-hire/security-engineer-interview-prep
+
+This roadmap is a project-design recommendation based on the preceding conversation and job research. Splunk availability/license details were not verified in this turn; confirm those during setup rather than assuming a free production deployment.
+
+
+
