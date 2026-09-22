@@ -44,6 +44,9 @@ lockout.
 All timestamps are timezone-aware and normalized to UTC. Requiredness may vary by event
 type, but validation must reject inconsistent combinations.
 
+The implemented schema version is the exact JSON string `"1.0"`. Numeric versions,
+coercion, and unknown strings are rejected.
+
 | Field | Meaning |
 | --- | --- |
 | `event_id` | Globally unique event identifier used for replay protection |
@@ -138,7 +141,7 @@ threshold, severity rationale, evidence, deterministic identity, suppression, be
 causes, blind spots, and independently written tests. Thresholds are configurable lab
 choices, not validated industry defaults.
 
-### R1 — Failed logins followed by success (v0.1)
+### R1 — Failed logins followed by success (v0.1, implemented)
 
 - **Hypothesis:** repeated failures followed by a successful login may indicate account
   compromise.
@@ -149,7 +152,8 @@ choices, not validated industry defaults.
 - **Threshold:** at least five failures followed by the success.
 - **Severity:** medium; the sequence warrants review but commonly results from user error.
 - **Evidence:** the success, all qualifying failures, source IPs, and session ID.
-- **Identity:** rule ID/version plus the success event ID.
+- **Identity:** rule ID/version, threshold, exact window duration in microseconds, and the
+  success event ID.
 - **Suppression:** deterministic identity prevents re-alerting for the same success.
 - **Benign causes:** mistyped passwords, saved stale credentials, or a shared client.
 - **Blind spots:** slow guessing, password spraying across many accounts, missing events,
@@ -161,6 +165,16 @@ choices, not validated industry defaults.
 
 A separate practice query groups by source IP and counts distinct attempted accounts to
 demonstrate password-spray reasoning; it is not part of R1.
+
+The Days 3–4 implementation is a pure batch function called by
+`python -m scripts.detect_r1`. It sorts validated events by event time and event ID,
+deduplicates source-equivalent replayed records while ignoring collection time, and
+retains the earliest `ingested_at`. Conflicting records passed directly to the detector
+raise an error because the pure function has no line-level rejection channel. Each
+qualifying success creates a distinct alert; differently configured runs cannot collide
+because threshold and window are part of the key. Results contain the deterministic
+identity, configuration, and ordered evidence needed by the Days 5–6 persistence layer.
+Database alert upserts and evidence-link uniqueness are not implemented yet.
 
 ### R2 — Repeated denied document access (v0.1)
 
@@ -237,6 +251,13 @@ This is threshold-based detection, not machine learning or behavioral baselining
 v0.1 processes batches sorted by `occurred_at`, then `event_id`, for deterministic results.
 Naive timestamps are invalid. A malformed record is quarantined with a reason while valid
 records continue; it must not silently erase the rest of the batch.
+
+Within one batch, records with the same event ID are source-equivalent when every
+normalized field except `ingested_at` matches. Equivalent replays collapse to the record
+with the earliest collection time and are reported separately from rejected records. If
+source content conflicts, every occurrence of that ID is excluded and rejected, including
+later records that match an earlier version. Unrelated valid records continue processing.
+Strict CLI mode fails for rejected or conflicting input, not for an equivalent replay.
 
 Incremental processing re-evaluates a configurable overlapping lookback. Unique event IDs,
 deterministic alert identities, and evidence-link constraints prevent duplicates. Events

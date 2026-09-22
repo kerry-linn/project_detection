@@ -5,9 +5,9 @@ detects suspicious behavior with Python, and exposes evidence for analyst invest
 The project is designed to build practical security analysis, detection engineering,
 Python, SQL, and API skills—not to imitate a production SIEM.
 
-> **Status:** Days 1–2 are implemented: JSONL fixtures, event validation, deterministic
-> parsing, rejection reporting, and parser tests. Detections and the application remain
-> planned until implemented and verified.
+> **Status:** Days 1–4 are implemented: JSONL parsing and validation plus the deterministic
+> R1 failed-logins-followed-by-success detection, evidence output, batch CLI, and behavioral
+> tests. Persistence, the API, R2, and the application remain planned.
 
 ## Core stack
 
@@ -69,6 +69,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
 python -m scripts.parse_events fixtures/days_1_2.jsonl
+python -m scripts.detect_r1 fixtures/days_1_2.jsonl
 python -m pytest
 ```
 
@@ -78,15 +79,38 @@ Use `--strict` when rejected records should produce exit status 2:
 python -m scripts.parse_events fixtures/days_1_2.jsonl --strict
 ```
 
-The parser validates event-specific required fields, normalizes timestamps to UTC,
-canonicalizes attempted accounts and IP addresses, rejects duplicate event IDs within a
-batch, and sorts valid events by `occurred_at` then `event_id`. A malformed line is
-reported with its line number and reason while later valid records still process.
+The parser validates event-specific required fields, accepts only schema version `"1.0"`,
+normalizes timestamps to UTC, canonicalizes attempted accounts and IP addresses, and sorts
+valid events by `occurred_at` then `event_id`. A malformed line is reported with its line
+number and reason while later valid records still process.
 
 `fixtures/expected/days_1_2.json` contains the independently written counts, event order,
 rejection expectations, and hand-checked R1 scenario for the next milestone. Duplicate
-handling is currently batch-local; database uniqueness and replay-safe alerting belong to
-later milestones.
+handling is currently batch-local. Source-equivalent replays ignore `ingested_at`, retain
+the earliest collection time, and are reported separately from rejected input. If one
+event ID has conflicting source content, every occurrence of that ID is excluded and
+reported while unrelated events continue. Database uniqueness and replay-safe alerting
+across requests belong to later milestones.
+
+The R1 detector groups events by organization and canonical attempted account. For each
+successful login, it includes failures in the preceding ten-minute window using inclusive
+start and exclusive end boundaries. Five or more failures produce a medium-severity result
+whose deterministic key contains the rule version, configured threshold, exact window
+duration in microseconds, and success event ID. The result retains ordered evidence event
+IDs and observed source IPs. Each qualifying successful login creates its own alert. Input
+order and source-equivalent replayed records do not change the result; conflicting records
+passed directly to the detector raise an error.
+
+The defaults are configurable for local experiments:
+
+```bash
+python -m scripts.detect_r1 fixtures/days_1_2.jsonl \
+  --threshold 3 --window-minutes 5
+```
+
+Use `--strict` to return status 2 after reporting any rejected fixture records. Benign
+duplicate replays are reported but do not make strict mode fail. Alert persistence and
+database-level replay protection begin in Days 5–6.
 
 The completed v0.1 demo will:
 

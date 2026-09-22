@@ -25,6 +25,7 @@ def format_report(result: ParseResult) -> str:
         f"Lines read: {result.lines_read}",
         f"Valid events: {len(result.events)}",
         f"Rejected records: {len(result.rejected)}",
+        f"Duplicate records: {len(result.duplicates)}",
         "Event types:",
     ]
     if result.event_type_counts:
@@ -40,6 +41,16 @@ def format_report(result: ParseResult) -> str:
         lines.extend(
             f"  line {record.line_number}: {record.reason}"
             for record in result.rejected
+        )
+    if result.duplicates:
+        lines.append("Duplicates:")
+        lines.extend(
+            (
+                f"  line {record.line_number}: duplicate event_id "
+                f"{record.event_id}; retained line "
+                f"{record.retained_line_number}"
+            )
+            for record in result.duplicates
         )
     return "\n".join(lines)
 

@@ -4,7 +4,7 @@ import ipaddress
 import json
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,6 +20,7 @@ SOURCES = {"application", "fixture", "cloudtrail"}
 OUTCOMES = {"success", "denied", "failure"}
 ROLES = {"member", "organization_admin", "lab_analyst"}
 RESOURCE_TYPES = {"document", "alert", "admin_route"}
+SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
 ALLOWED_FIELDS = {
     "event_id",
     "occurred_at",
@@ -113,9 +114,17 @@ class RejectedRecord:
 
 
 @dataclass(frozen=True)
+class DuplicateRecord:
+    line_number: int
+    event_id: str
+    retained_line_number: int
+
+
+@dataclass(frozen=True)
 class ParseResult:
     events: tuple[SecurityEvent, ...]
     rejected: tuple[RejectedRecord, ...]
+    duplicates: tuple[DuplicateRecord, ...]
     lines_read: int
 
     @property
@@ -181,15 +190,16 @@ def parse_event(record: object) -> SecurityEvent:
         resource_id=resource_id,
         outcome=outcome,
         request_id=_require_string(record, "request_id"),
-        schema_version=_require_string(record, "schema_version"),
+        schema_version=_require_choice(
+            record, "schema_version", SUPPORTED_SCHEMA_VERSIONS
+        ),
         metadata=_validate_metadata(record.get("metadata", {})),
     )
 
 
 def parse_jsonl(path: str | Path) -> ParseResult:
-    events: list[SecurityEvent] = []
+    records_by_event_id: dict[str, list[tuple[int, SecurityEvent]]] = {}
     rejected: list[RejectedRecord] = []
-    seen_event_ids: set[str] = set()
     lines_read = 0
 
     with Path(path).open("rb") as source:
@@ -205,12 +215,9 @@ def parse_jsonl(path: str | Path) -> ParseResult:
                     raise EventValidationError("line is blank")
                 record = json.loads(line)
                 event = parse_event(record)
-                if event.event_id in seen_event_ids:
-                    raise EventValidationError(
-                        f"duplicate event_id: {event.event_id}"
-                    )
-                seen_event_ids.add(event.event_id)
-                events.append(event)
+                records_by_event_id.setdefault(event.event_id, []).append(
+                    (line_number, event)
+                )
             except UnicodeDecodeError:
                 rejected.append(
                     RejectedRecord(line_number, "line is not valid UTF-8")
@@ -225,8 +232,60 @@ def parse_jsonl(path: str | Path) -> ParseResult:
             except EventValidationError as error:
                 rejected.append(RejectedRecord(line_number, str(error)))
 
+    events: list[SecurityEvent] = []
+    duplicates: list[DuplicateRecord] = []
+    for event_id, occurrences in records_by_event_id.items():
+        reference = occurrences[0][1]
+        if any(
+            not events_have_same_source_content(reference, event)
+            for _, event in occurrences[1:]
+        ):
+            rejected.extend(
+                RejectedRecord(
+                    line_number,
+                    f"conflicting event_id: {event_id}",
+                )
+                for line_number, _ in occurrences
+            )
+            continue
+
+        retained_line_number, retained_event = min(
+            occurrences,
+            key=lambda occurrence: (
+                occurrence[1].ingested_at,
+                occurrence[0],
+            ),
+        )
+        events.append(retained_event)
+        duplicates.extend(
+            DuplicateRecord(
+                line_number=line_number,
+                event_id=event_id,
+                retained_line_number=retained_line_number,
+            )
+            for line_number, _ in occurrences
+            if line_number != retained_line_number
+        )
+
     events.sort(key=lambda event: (event.occurred_at, event.event_id))
-    return ParseResult(tuple(events), tuple(rejected), lines_read)
+    rejected.sort(key=lambda record: record.line_number)
+    duplicates.sort(key=lambda record: record.line_number)
+    return ParseResult(
+        tuple(events),
+        tuple(rejected),
+        tuple(duplicates),
+        lines_read,
+    )
+
+
+def events_have_same_source_content(
+    first: SecurityEvent, second: SecurityEvent
+) -> bool:
+    return all(
+        getattr(first, field.name) == getattr(second, field.name)
+        for field in fields(SecurityEvent)
+        if field.name != "ingested_at"
+    )
 
 
 def _validate_event_shape(

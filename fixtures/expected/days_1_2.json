@@ -1,7 +1,8 @@
 {
   "lines_read": 20,
   "valid_events": 18,
-  "rejected_records": 2,
+  "rejected_records": 1,
+  "duplicate_records": 1,
   "event_type_counts": {
     "access_denied": 3,
     "document_downloaded": 1,
@@ -30,8 +31,13 @@
     "evt-020"
   ],
   "rejected_lines": {
-    "18": "malformed JSON",
-    "19": "duplicate event_id evt-009"
+    "18": "malformed JSON"
+  },
+  "duplicate_lines": {
+    "19": {
+      "event_id": "evt-009",
+      "retained_line": 9
+    }
   },
   "hand_checked_r1_scenario_for_days_3_4": {
     "organization_id": "org-alpha",
