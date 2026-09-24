@@ -3,11 +3,10 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
-from collections import Counter
-from dataclasses import dataclass, fields
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
+
+from security_events.models import SecurityEvent
 
 EVENT_TYPES = {
     "login_failed",
@@ -21,6 +20,13 @@ OUTCOMES = {"success", "denied", "failure"}
 ROLES = {"member", "organization_admin", "lab_analyst"}
 RESOURCE_TYPES = {"document", "alert", "admin_route"}
 SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
+REQUIRED_OUTCOMES = {
+    "login_failed": "failure",
+    "login_succeeded": "success",
+    "access_denied": "denied",
+    "document_downloaded": "success",
+    "role_changed": "success",
+}
 ALLOWED_FIELDS = {
     "event_id",
     "occurred_at",
@@ -51,7 +57,6 @@ FORBIDDEN_METADATA_KEYS = {
     "cookie",
     "document_content",
 }
-MAX_LINE_BYTES = 16_384
 MAX_STRING_LENGTH = 256
 MAX_METADATA_BYTES = 4_096
 CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -59,78 +64,6 @@ CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 class EventValidationError(ValueError):
     pass
-
-
-@dataclass(frozen=True)
-class SecurityEvent:
-    event_id: str
-    occurred_at: datetime
-    ingested_at: datetime
-    source: str
-    event_type: str
-    organization_id: str | None
-    actor_id: str | None
-    attempted_account: str | None
-    target_actor_id: str | None
-    previous_role: str | None
-    new_role: str | None
-    session_id: str | None
-    source_ip: str | None
-    resource_type: str | None
-    resource_id: str | None
-    outcome: str
-    request_id: str
-    schema_version: str
-    metadata: dict[str, Any]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "event_id": self.event_id,
-            "occurred_at": _format_utc(self.occurred_at),
-            "ingested_at": _format_utc(self.ingested_at),
-            "source": self.source,
-            "event_type": self.event_type,
-            "organization_id": self.organization_id,
-            "actor_id": self.actor_id,
-            "attempted_account": self.attempted_account,
-            "target_actor_id": self.target_actor_id,
-            "previous_role": self.previous_role,
-            "new_role": self.new_role,
-            "session_id": self.session_id,
-            "source_ip": self.source_ip,
-            "resource_type": self.resource_type,
-            "resource_id": self.resource_id,
-            "outcome": self.outcome,
-            "request_id": self.request_id,
-            "schema_version": self.schema_version,
-            "metadata": self.metadata,
-        }
-
-
-@dataclass(frozen=True)
-class RejectedRecord:
-    line_number: int
-    reason: str
-
-
-@dataclass(frozen=True)
-class DuplicateRecord:
-    line_number: int
-    event_id: str
-    retained_line_number: int
-
-
-@dataclass(frozen=True)
-class ParseResult:
-    events: tuple[SecurityEvent, ...]
-    rejected: tuple[RejectedRecord, ...]
-    duplicates: tuple[DuplicateRecord, ...]
-    lines_read: int
-
-    @property
-    def event_type_counts(self) -> dict[str, int]:
-        counts = Counter(event.event_type for event in self.events)
-        return dict(sorted(counts.items()))
 
 
 def parse_event(record: object) -> SecurityEvent:
@@ -197,97 +130,6 @@ def parse_event(record: object) -> SecurityEvent:
     )
 
 
-def parse_jsonl(path: str | Path) -> ParseResult:
-    records_by_event_id: dict[str, list[tuple[int, SecurityEvent]]] = {}
-    rejected: list[RejectedRecord] = []
-    lines_read = 0
-
-    with Path(path).open("rb") as source:
-        for line_number, raw_line in enumerate(source, start=1):
-            lines_read = line_number
-            try:
-                if len(raw_line) > MAX_LINE_BYTES:
-                    raise EventValidationError(
-                        f"line exceeds {MAX_LINE_BYTES} bytes"
-                    )
-                line = raw_line.decode("utf-8")
-                if not line.strip():
-                    raise EventValidationError("line is blank")
-                record = json.loads(line)
-                event = parse_event(record)
-                records_by_event_id.setdefault(event.event_id, []).append(
-                    (line_number, event)
-                )
-            except UnicodeDecodeError:
-                rejected.append(
-                    RejectedRecord(line_number, "line is not valid UTF-8")
-                )
-            except json.JSONDecodeError as error:
-                rejected.append(
-                    RejectedRecord(
-                        line_number,
-                        f"invalid JSON at column {error.colno}",
-                    )
-                )
-            except EventValidationError as error:
-                rejected.append(RejectedRecord(line_number, str(error)))
-
-    events: list[SecurityEvent] = []
-    duplicates: list[DuplicateRecord] = []
-    for event_id, occurrences in records_by_event_id.items():
-        reference = occurrences[0][1]
-        if any(
-            not events_have_same_source_content(reference, event)
-            for _, event in occurrences[1:]
-        ):
-            rejected.extend(
-                RejectedRecord(
-                    line_number,
-                    f"conflicting event_id: {event_id}",
-                )
-                for line_number, _ in occurrences
-            )
-            continue
-
-        retained_line_number, retained_event = min(
-            occurrences,
-            key=lambda occurrence: (
-                occurrence[1].ingested_at,
-                occurrence[0],
-            ),
-        )
-        events.append(retained_event)
-        duplicates.extend(
-            DuplicateRecord(
-                line_number=line_number,
-                event_id=event_id,
-                retained_line_number=retained_line_number,
-            )
-            for line_number, _ in occurrences
-            if line_number != retained_line_number
-        )
-
-    events.sort(key=lambda event: (event.occurred_at, event.event_id))
-    rejected.sort(key=lambda record: record.line_number)
-    duplicates.sort(key=lambda record: record.line_number)
-    return ParseResult(
-        tuple(events),
-        tuple(rejected),
-        tuple(duplicates),
-        lines_read,
-    )
-
-
-def events_have_same_source_content(
-    first: SecurityEvent, second: SecurityEvent
-) -> bool:
-    return all(
-        getattr(first, field.name) == getattr(second, field.name)
-        for field in fields(SecurityEvent)
-        if field.name != "ingested_at"
-    )
-
-
 def _validate_event_shape(
     *,
     event_type: str,
@@ -302,36 +144,33 @@ def _validate_event_shape(
     resource_type: str | None,
     resource_id: str | None,
 ) -> None:
-    required_outcome = {
-        "login_failed": "failure",
-        "login_succeeded": "success",
-        "access_denied": "denied",
-        "document_downloaded": "success",
-        "role_changed": "success",
-    }[event_type]
+    required_outcome = REQUIRED_OUTCOMES[event_type]
     if outcome != required_outcome:
         raise EventValidationError(
             f"{event_type} outcome must be {required_outcome}"
         )
     if organization_id is None:
-        raise EventValidationError(
-            f"{event_type} requires organization_id"
-        )
+        raise EventValidationError(f"{event_type} requires organization_id")
+
     if event_type in {"login_failed", "login_succeeded"}:
         _require_present(attempted_account, event_type, "attempted_account")
+
     if event_type != "login_failed":
         _require_present(actor_id, event_type, "actor_id")
         _require_present(session_id, event_type, "session_id")
+
     if event_type == "access_denied":
         _require_present(resource_type, event_type, "resource_type")
         if resource_type == "document":
             _require_present(resource_id, event_type, "resource_id")
+
     if event_type == "document_downloaded":
         if resource_type != "document":
             raise EventValidationError(
                 "document_downloaded resource_type must be document"
             )
         _require_present(resource_id, event_type, "resource_id")
+
     if event_type == "role_changed":
         _require_present(target_actor_id, event_type, "target_actor_id")
         _require_present(previous_role, event_type, "previous_role")
@@ -342,9 +181,7 @@ def _validate_event_shape(
             )
 
 
-def _require_present(
-    value: str | None, event_type: str, field: str
-) -> None:
+def _require_present(value: str | None, event_type: str, field: str) -> None:
     if value is None:
         raise EventValidationError(f"{event_type} requires {field}")
 
@@ -366,7 +203,7 @@ def _require_string(record: dict[str, Any], field: str) -> str:
 
 
 def _optional_string(record: dict[str, Any], field: str) -> str | None:
-    if field not in record or record[field] is None:
+    if record.get(field) is None:
         return None
     return _require_string(record, field)
 
@@ -385,24 +222,22 @@ def _require_choice(
 def _optional_choice(
     record: dict[str, Any], field: str, choices: set[str]
 ) -> str | None:
-    value = _optional_string(record, field)
-    if value is not None and value not in choices:
-        raise EventValidationError(
-            f"{field} must be one of: {', '.join(sorted(choices))}"
-        )
-    return value
+    if record.get(field) is None:
+        return None
+    return _require_choice(record, field, choices)
 
 
 def _require_timestamp(record: dict[str, Any], field: str) -> datetime:
     value = _require_string(record, field)
-    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
     try:
-        timestamp = datetime.fromisoformat(normalized)
+        timestamp = datetime.fromisoformat(value)
     except ValueError as error:
         raise EventValidationError(
             f"{field} must be a valid ISO 8601 timestamp"
         ) from error
-    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+    if timestamp.utcoffset() is None:
         raise EventValidationError(f"{field} must include a timezone")
     return timestamp.astimezone(timezone.utc)
 
@@ -448,10 +283,4 @@ def _validate_metadata_values(value: object) -> None:
                 f"metadata string exceeds {MAX_STRING_LENGTH} characters"
             )
         if CONTROL_CHARACTERS.search(value):
-            raise EventValidationError(
-                "metadata contains control characters"
-            )
-
-
-def _format_utc(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            raise EventValidationError("metadata contains control characters")

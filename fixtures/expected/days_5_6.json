@@ -1,0 +1,31 @@
+{
+  "first_replay": {
+    "skipped_lines": ["line 18: invalid JSON"],
+    "received": 19,
+    "inserted": 18,
+    "replayed": 1
+  },
+  "second_replay": {
+    "received": 19,
+    "inserted": 0,
+    "replayed": 19
+  },
+  "stored_events": 18,
+  "alert": {
+    "alert_key": "R1_FAILED_LOGINS_FOLLOWED_BY_SUCCESS:1.0:threshold=5:window_us=600000000:evt-009",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "window_start": "2026-09-17T12:50:00Z",
+    "window_end": "2026-09-17T13:00:00Z",
+    "failure_count": 5,
+    "source_ips": ["198.51.100.40", "198.51.100.41", "198.51.100.42"],
+    "evidence": [
+      ["evt-004", "failed_login"],
+      ["evt-005", "failed_login"],
+      ["evt-006", "failed_login"],
+      ["evt-007", "failed_login"],
+      ["evt-008", "failed_login"],
+      ["evt-009", "successful_login"]
+    ]
+  }
+}

@@ -1,173 +1,111 @@
 # Security Monitoring and Investigation Platform
 
-A portfolio-scale document-sharing application that produces structured security events,
-detects suspicious behavior with Python, and exposes evidence for analyst investigation.
-The project is designed to build practical security analysis, detection engineering,
-Python, SQL, and API skills—not to imitate a production SIEM.
+A portfolio-scale security monitoring lab built around a fictional document-sharing
+application. The project is designed to build practical skills in structured event
+handling, detection engineering, Python, SQL, APIs, and security investigation.
 
-> **Status:** Days 1–4 are implemented: JSONL parsing and validation plus the deterministic
-> R1 failed-logins-followed-by-success detection, evidence output, batch CLI, and behavioral
-> tests. Persistence, the API, R2, and the application remain planned.
+> **Status:** Days 1–6 are complete. Security events are validated, ingested through a
+> collector-only API into PostgreSQL, evaluated by a deterministic
+> failed-logins-followed-by-success detection, and stored as deduplicated alerts linked
+> to their raw evidence. Analyst-only endpoints expose events, alerts, and evidence. The
+> second detection and the document application remain planned.
 
-## Core stack
+## Current capabilities
 
-- React and TypeScript for the document and investigation interfaces
-- Python and FastAPI for application APIs, event processing, and detections
-- PostgreSQL for application data, security events, alerts, and case notes
-- pytest for parser, rule, API, and authorization tests
-- Docker Compose for a repeatable local environment
-- Splunk/SPL and AWS S3, IAM, and CloudTrail as later extensions
+- A versioned security-event contract with event-specific validation
+- Deterministic JSONL parsing, normalization, replay handling, and error reporting
+- R1: five failed logins followed by a success within ten minutes
+- PostgreSQL storage with constraints, foreign keys, and SQL migrations
+- Trusted batch ingestion that stores replays once and rejects conflicting event IDs
+- Replay-safe alert storage: rerunning the detector never duplicates an alert
+- Alert-to-event evidence links and a recorded history of detector runs
+- Separate collector and analyst credentials enforced on every endpoint
+- Behavioral, persistence, API, and authorization tests against real PostgreSQL
 
-The local project must remain runnable without Splunk or AWS.
+Walkthroughs of the code and data flow:
+
+- [Days 1–4: parsing and the R1 detection](docs/DAYS_1_4.md)
+- [Days 5–6: PostgreSQL, persistence, and APIs](docs/DAYS_5_6.md)
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    AppRoutes["Document and auth routes"] --> Events[(security_events)]
-    Fixtures["Trusted fixture ingestion"] --> Events
-    Events --> Detector["Python batch detector"]
-    Detector --> Alerts[(alerts and evidence links)]
-    Events --> InvestigationAPI["Authorized investigation API"]
-    Alerts --> InvestigationAPI
-    InvestigationAPI --> ReactUI["React analyst view"]
-    Events -. "later export" .-> Splunk["Splunk searches"]
+    Collector["Trusted collector"] -->|"POST /internal/events/batch"| API["FastAPI"]
+    API --> Validation["Validation and normalization"]
+    Validation --> Events[(security_events)]
+    Events --> Runner["Detection runner"]
+    Runner --> Detector["Pure Python R1"]
+    Detector --> Runner
+    Runner --> Alerts[(alerts and alert_events)]
+    Events --> Reads["GET /security/*"]
+    Alerts --> Reads
+    Reads --> Analyst["Lab analyst"]
 ```
 
-Application routes derive actor identity, outcome, and source details on the server. The
-detector evaluates structured events and creates deduplicated, evidence-linked alerts.
-Only the lab analyst can access global security events and alerts.
+PostgreSQL stores facts; the detector decides whether those facts are suspicious.
+Detection functions remain independent of HTTP and database code, so the same rule runs
+from the file-based CLI and the database-backed runner.
 
-See [docs/TECHNICAL.md](docs/TECHNICAL.md) for the data contract, trust boundaries,
-detection specifications, and engineering rules.
+## Core stack
 
-## Planned repository layout
+- Python for event processing and detection logic
+- PostgreSQL (Docker Compose) and `psycopg` with parameterized SQL
+- FastAPI for trusted ingestion and investigation reads
+- pytest for behavioral tests
+- React and TypeScript for the planned document and investigation interfaces
 
-```text
-.
-├── backend/             # API, models, authorization, and event ingestion
-├── detections/          # Pure rule logic and configuration
-├── docs/                # Technical specification, threat model, and investigations
-├── fixtures/            # Synthetic events and independently specified results
-├── frontend/            # Document application and analyst views
-├── practice/            # Focused learning exercises
-├── scripts/             # Seed, replay, collector, and export utilities
-├── splunk/              # SPL searches and narrow setup notes
-├── tests/               # Parser, detection, API, and authorization tests
-├── .github/workflows/   # Automated tests
-├── .env.example
-├── compose.yaml
-└── README.md
-```
+The local project remains runnable without Splunk or AWS.
 
-## Current setup and parser demo
+## Run it
 
-Python 3.10 or newer is required.
+Python 3.10 or newer and Docker are required.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
-python -m scripts.parse_events fixtures/days_1_2.jsonl
-python -m scripts.detect_r1 fixtures/days_1_2.jsonl
+
+cp .env.example .env    # then set a password and generate both tokens
+docker compose up -d --wait
+python -m scripts.migrate
+python -m scripts.migrate --database-url-env TEST_DATABASE_URL
+
 python -m pytest
 ```
 
-Use `--strict` when rejected records should produce exit status 2:
+Demonstrate the pipeline (API in one terminal, commands in another):
 
 ```bash
-python -m scripts.parse_events fixtures/days_1_2.jsonl --strict
+uvicorn backend.api:create_app --factory
+
+python -m scripts.replay_events fixtures/days_1_2.jsonl
+python -m scripts.run_detection
+python -m scripts.run_detection   # second run: alerts_unchanged=1, nothing created
 ```
 
-The parser validates event-specific required fields, accepts only schema version `"1.0"`,
-normalizes timestamps to UTC, canonicalizes attempted accounts and IP addresses, and sorts
-valid events by `occurred_at` then `event_id`. A malformed line is reported with its line
-number and reason while later valid records still process.
-
-`fixtures/expected/days_1_2.json` contains the independently written counts, event order,
-rejection expectations, and hand-checked R1 scenario for the next milestone. Duplicate
-handling is currently batch-local. Source-equivalent replays ignore `ingested_at`, retain
-the earliest collection time, and are reported separately from rejected input. If one
-event ID has conflicting source content, every occurrence of that ID is excluded and
-reported while unrelated events continue. Database uniqueness and replay-safe alerting
-across requests belong to later milestones.
-
-The R1 detector groups events by organization and canonical attempted account. For each
-successful login, it includes failures in the preceding ten-minute window using inclusive
-start and exclusive end boundaries. Five or more failures produce a medium-severity result
-whose deterministic key contains the rule version, configured threshold, exact window
-duration in microseconds, and success event ID. The result retains ordered evidence event
-IDs and observed source IPs. Each qualifying successful login creates its own alert. Input
-order and source-equivalent replayed records do not change the result; conflicting records
-passed directly to the detector raise an error.
-
-The defaults are configurable for local experiments:
+The file-only tools from Days 1–4 still work without a database:
 
 ```bash
-python -m scripts.detect_r1 fixtures/days_1_2.jsonl \
-  --threshold 3 --window-minutes 5
+python -m scripts.parse_events fixtures/days_1_2.jsonl
+python -m scripts.detect_r1 fixtures/days_1_2.jsonl
 ```
 
-Use `--strict` to return status 2 after reporting any rejected fixture records. Benign
-duplicate replays are reported but do not make strict mode fail. Alert persistence and
-database-level replay protection begin in Days 5–6.
+To wipe local data and start over: `docker compose down -v`, then repeat the Compose and
+migration steps. See the [Days 5–6 walkthrough](docs/DAYS_5_6.md) for endpoint examples.
 
-The completed v0.1 demo will:
+## What is next
 
-1. Seed fictional users in two organizations.
-2. Replay benign, suspicious, malformed, and duplicate events.
-3. Run two time-window detections.
-4. Open an alert and follow it to the exact supporting events.
-5. demonstrate that members and organization administrators cannot read global security
-   records, including through direct API requests.
+Days 7–9 add login, two organizations, document routes with server-side ownership
+checks, server-generated login and denied-access events, and R2.
 
-No live credentials, personal data, access tokens, session cookies, or document contents
-belong in fixtures or logs.
+See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,
+and rule specifications. See [Project roadmap](security_project_roadmap.txt) for the
+planned milestones and release scope.
 
-## Release scope
+## Scope
 
-### v0.1 — core local system
-
-- Local document application with member, organization administrator, and lab analyst roles
-- Server-side authorization across two organizations
-- Structured event ingestion and PostgreSQL persistence
-- Failed-logins-followed-by-success detection
-- Repeated denied document access detection
-- Deduplicated alerts with supporting event references
-- Minimal investigation interface
-- Meaningful parser, detection, API, and authorization tests
-- One evidence-based investigation
-
-### v1.0 — focused extensions
-
-- Privilege-change-followed-by-download and high-download-volume detections
-- Protected, cursor-paginated API collector with bounded retries and checkpointing
-- Splunk searches compared with Python results on the same fixtures
-- Alert status, notes, dispositions, and analyst action history
-- CI for core behavioral tests
-- Private S3 attachments and one narrowly scoped CloudTrail investigation
-- Three concise investigations and a completed threat model
-
-Kafka, Kubernetes, Redis, microservices, machine learning, OCSF, threat-intelligence
-enrichment, Sysmon, multiple SIEMs, and production-scale streaming are intentionally out
-of scope.
-
-## v0.1 readiness
-
-The project is ready to list as v0.1 only when:
-
-- [ ] A fresh checkout runs locally from documented setup and reset instructions.
-- [ ] Both detections produce deterministic, evidence-backed alerts.
-- [ ] Replaying the same events creates no duplicate events or alerts.
-- [ ] Direct API tests enforce user, organization, and analyst boundaries.
-- [ ] Benign, suspicious, malformed, shuffled, boundary, and duplicate cases are tested.
-- [ ] An alert can be followed to its raw supporting events.
-- [ ] One concise investigation and a two-to-three-minute demo exist.
-- [ ] Known limitations and any measured results are stated accurately.
-
-## Scope and claims
-
-This is a controlled portfolio lab, not professional SOC experience, a production SIEM,
-or evidence of preventing breaches. Threshold detections identify behavior worth
-investigating; they do not prove credential compromise, privilege escalation, or data
-exfiltration. Resume statements will describe only completed, reproducible capabilities.
+This is a controlled portfolio lab, not a production SIEM or professional SOC
+experience. Its threshold detections identify activity worth investigating; they do not
+prove account compromise or data exfiltration. Fixtures contain only fictional data and
+must never include credentials, tokens, cookies, or document contents.

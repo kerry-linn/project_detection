@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 from typing import Sequence
 
-from scripts.event_parser import ParseResult, parse_jsonl
+from security_events import ParseResult, parse_jsonl
 
 
 def build_parser() -> argparse.ArgumentParser:

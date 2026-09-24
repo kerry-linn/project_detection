@@ -111,6 +111,24 @@ identified as synthetic.
 Indexes follow actual query patterns: event time plus each grouping field used by a rule.
 Database access uses parameterized SQL or an ORM.
 
+**Implemented in Days 5–6** ([`backend/migrations/001_initial.sql`](../backend/migrations/001_initial.sql)):
+`security_events`, `alerts`, `alert_events`, and `detection_runs`, using raw parameterized
+`psycopg` SQL rather than an ORM.
+
+- `security_events` stores every contract field. `event_id` is the primary key; controlled
+  values, the schema version, and the metadata shape are `CHECK` constraints; `source_ip`
+  is `INET`; timestamps are `TIMESTAMPTZ`. Indexes cover `(occurred_at, event_id)` for
+  ordered scans and `(organization_id, attempted_account, occurred_at)` for account
+  investigation.
+- `alerts` uses the R1 deterministic key as its primary key (`alert_key`). Detection
+  refreshes rule-derived fields; `status` is analyst-owned and never overwritten.
+- `alert_events` has a composite primary key `(alert_key, event_id)`, a typed
+  `evidence_role`, and foreign keys to both tables, so evidence cannot reference a missing
+  event.
+- `detection_runs` records rule version, configuration, timing, status, scanned event-time
+  range, alert outcome counts, and a failure message.
+- `users`, `documents`, `case_notes`, and disposition fields remain planned.
+
 ## Pipeline and trust boundaries
 
 1. Normal application routes derive identity, organization, outcome, request ID, and source
@@ -128,6 +146,14 @@ Database access uses parameterized SQL or an ORM.
 Ordinary clients may not assert actor identity, organization, source IP, or request outcome.
 Proxy headers are trusted only when the application is configured behind a known proxy.
 The browser-facing API never accepts arbitrary security events.
+
+The implemented collector boundary (`POST /internal/events/batch`) accepts only `fixture`
+and `cloudtrail` sources; `application` events are reserved for server routes. The server
+assigns `ingested_at`, and a client-supplied value is rejected. Lab authentication uses two
+distinct static bearer tokens from the environment, compared with
+`secrets.compare_digest`: the collector token may only ingest, and the analyst token may
+only read. This is a lab mechanism, not the final identity design, which must be chosen
+before Days 7–9.
 
 For state-changing routes, failure to persist the audit event fails the business
 transaction. For denied requests, an audit-write failure is surfaced and measured, but
@@ -173,8 +199,13 @@ retains the earliest `ingested_at`. Conflicting records passed directly to the d
 raise an error because the pure function has no line-level rejection channel. Each
 qualifying success creates a distinct alert; differently configured runs cannot collide
 because threshold and window are part of the key. Results contain the deterministic
-identity, configuration, and ordered evidence needed by the Days 5–6 persistence layer.
-Database alert upserts and evidence-link uniqueness are not implemented yet.
+identity, configuration, and ordered evidence needed by the persistence layer.
+
+Days 5–6 add `python -m scripts.run_detection`, which loads stored events, calls the same
+pure function, and saves each alert by its key: new keys are inserted, existing keys whose
+evidence changed are updated with their links replaced, and identical results are left
+untouched. A late failure inside an existing window therefore extends the same alert
+instead of creating a second one.
 
 ### R2 — Repeated denied document access (v0.1)
 
@@ -259,6 +290,12 @@ source content conflicts, every occurrence of that ID is excluded and rejected, 
 later records that match an earlier version. Unrelated valid records continue processing.
 Strict CLI mode fails for rejected or conflicting input, not for an equivalent replay.
 
+Across requests, PostgreSQL enforces the same policy. A stored event ID that arrives again
+with identical source content is counted as a replay and not stored twice; the first
+`ingested_at` is kept. The same ID with different content rejects the entire ingestion
+batch with `409 Conflict`, because the authoritative evidence would otherwise depend on
+arrival order.
+
 Incremental processing re-evaluates a configurable overlapping lookback. Unique event IDs,
 deterministic alert identities, and evidence-link constraints prevent duplicates. Events
 older than the late-event allowance require an explicit backfill command. The project does
@@ -285,6 +322,11 @@ generate their expected result by calling the logic under test.
 Exact routes may change with implementation, but their authorization boundaries may not
 weaken silently. Cursor pagination uses stable ordering and documents how concurrent
 inserts affect traversal.
+
+Implemented in Days 5–6: `POST /internal/events/batch`, `GET /security/events` (filters and
+a bounded `limit`; cursor pagination remains planned), `GET /security/alerts`, and
+`GET /security/alerts/{alert_key}`. Security reads currently accept only the analyst
+credential; a scoped read-only collector credential is not implemented.
 
 ## Engineering rules
 

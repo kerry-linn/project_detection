@@ -12,7 +12,7 @@ from detections.failed_login_success import (
     FailedLoginSuccessConfig,
     detect_failed_logins_followed_by_success,
 )
-from scripts.event_parser import parse_jsonl
+from security_events import parse_jsonl
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,13 +25,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("path", type=Path, help="Path to a JSONL event file")
     parser.add_argument(
         "--threshold",
-        type=_positive_int,
+        type=positive_int,
         default=DEFAULT_THRESHOLD,
         help=f"Required failure count (default: {DEFAULT_THRESHOLD})",
     )
     parser.add_argument(
         "--window-minutes",
-        type=_positive_int,
+        type=positive_int,
         default=int(DEFAULT_WINDOW.total_seconds() // 60),
         help="Lookback window in minutes (default: 10)",
     )
@@ -85,7 +85,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _positive_int(value: str) -> int:
+def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be at least 1")

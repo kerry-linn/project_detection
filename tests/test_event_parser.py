@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.event_parser import (
+from security_events import (
     EventValidationError,
     parse_event,
     parse_jsonl,

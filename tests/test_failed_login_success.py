@@ -15,7 +15,7 @@ from detections.failed_login_success import (
     detect_failed_logins_followed_by_success,
 )
 from scripts.detect_r1 import main
-from scripts.event_parser import SecurityEvent, parse_event, parse_jsonl
+from security_events import SecurityEvent, parse_event, parse_jsonl
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"

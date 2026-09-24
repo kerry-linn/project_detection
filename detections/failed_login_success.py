@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Iterable
 
-from scripts.event_parser import (
+from security_events import (
     SecurityEvent,
     events_have_same_source_content,
+    format_utc,
 )
 
 RULE_ID = "R1_FAILED_LOGINS_FOLLOWED_BY_SUCCESS"
 RULE_VERSION = "1.0"
+SEVERITY = "medium"
 DEFAULT_THRESHOLD = 5
 DEFAULT_WINDOW = timedelta(minutes=10)
 
@@ -25,6 +27,14 @@ class FailedLoginSuccessConfig:
             raise ValueError("threshold must be at least 1")
         if self.window <= timedelta(0):
             raise ValueError("window must be greater than zero")
+
+    @property
+    def window_microseconds(self) -> int:
+        return (
+            self.window.days * 86_400_000_000
+            + self.window.seconds * 1_000_000
+            + self.window.microseconds
+        )
 
 
 @dataclass(frozen=True)
@@ -57,8 +67,8 @@ class FailedLoginSuccessAlert:
             "organization_id": self.organization_id,
             "attempted_account": self.attempted_account,
             "actor_id": self.actor_id,
-            "window_start": _format_utc(self.window_start),
-            "window_end": _format_utc(self.window_end),
+            "window_start": format_utc(self.window_start),
+            "window_end": format_utc(self.window_end),
             "threshold": self.threshold,
             "window_microseconds": self.window_microseconds,
             "failure_count": self.failure_count,
@@ -76,86 +86,89 @@ def detect_failed_logins_followed_by_success(
     config: FailedLoginSuccessConfig | None = None,
 ) -> tuple[FailedLoginSuccessAlert, ...]:
     rule_config = config or FailedLoginSuccessConfig()
-    ordered_events = _deduplicate_and_sort(events)
-    window_microseconds = _timedelta_microseconds(rule_config.window)
-    failures_by_entity: dict[
-        tuple[str, str], list[SecurityEvent]
-    ] = {}
+    failures_by_entity: dict[tuple[str, str], list[SecurityEvent]] = {}
     alerts: list[FailedLoginSuccessAlert] = []
 
-    for event in ordered_events:
+    for event in _deduplicate_and_sort(events):
         if event.organization_id is None or event.attempted_account is None:
             continue
-
         entity = (event.organization_id, event.attempted_account)
+
         if event.event_type == "login_failed":
             failures_by_entity.setdefault(entity, []).append(event)
-            continue
-        if event.event_type != "login_succeeded":
-            continue
-
-        window_start = event.occurred_at - rule_config.window
-        qualifying_failures = tuple(
-            failure
-            for failure in failures_by_entity.get(entity, ())
-            if window_start
-            <= failure.occurred_at
-            < event.occurred_at
-        )
-        if len(qualifying_failures) < rule_config.threshold:
-            continue
-
-        failure_event_ids = tuple(
-            failure.event_id for failure in qualifying_failures
-        )
-        evidence = (*qualifying_failures, event)
-        source_ips = tuple(
-            sorted(
-                {
-                    evidence_event.source_ip
-                    for evidence_event in evidence
-                    if evidence_event.source_ip is not None
-                }
+        elif event.event_type == "login_succeeded":
+            failures = _failures_before(
+                failures_by_entity.get(entity, []), event, rule_config.window
             )
-        )
-        alerts.append(
-            FailedLoginSuccessAlert(
-                alert_key=(
-                    f"{RULE_ID}:{RULE_VERSION}:"
-                    f"threshold={rule_config.threshold}:"
-                    f"window_us={window_microseconds}:"
-                    f"{event.event_id}"
-                ),
-                rule_id=RULE_ID,
-                rule_version=RULE_VERSION,
-                severity="medium",
-                organization_id=event.organization_id,
-                attempted_account=event.attempted_account,
-                actor_id=event.actor_id,
-                window_start=window_start,
-                window_end=event.occurred_at,
-                threshold=rule_config.threshold,
-                window_microseconds=window_microseconds,
-                failure_count=len(qualifying_failures),
-                failure_event_ids=failure_event_ids,
-                success_event_id=event.event_id,
-                evidence_event_ids=(*failure_event_ids, event.event_id),
-                source_ips=source_ips,
-                session_id=event.session_id,
-                reason=(
-                    f"{len(qualifying_failures)} failed logins for "
-                    f"{event.attempted_account} in {event.organization_id} "
-                    f"were followed by a successful login"
-                ),
-            )
-        )
+            if len(failures) >= rule_config.threshold:
+                alerts.append(_build_alert(event, failures, rule_config))
 
     return tuple(alerts)
 
 
+def _failures_before(
+    failures: list[SecurityEvent],
+    success: SecurityEvent,
+    window: timedelta,
+) -> list[SecurityEvent]:
+    """Window is [success - window, success): a failure at the success time is excluded."""
+    window_start = success.occurred_at - window
+    qualifying = []
+    for failure in failures:
+        if window_start <= failure.occurred_at < success.occurred_at:
+            qualifying.append(failure)
+    return qualifying
+
+
+def _build_alert(
+    success: SecurityEvent,
+    failures: list[SecurityEvent],
+    config: FailedLoginSuccessConfig,
+) -> FailedLoginSuccessAlert:
+    failure_event_ids = tuple(failure.event_id for failure in failures)
+    source_ips = set()
+    for evidence_event in [*failures, success]:
+        if evidence_event.source_ip is not None:
+            source_ips.add(evidence_event.source_ip)
+
+    return FailedLoginSuccessAlert(
+        alert_key=_alert_key(config, success.event_id),
+        rule_id=RULE_ID,
+        rule_version=RULE_VERSION,
+        severity=SEVERITY,
+        organization_id=success.organization_id,
+        attempted_account=success.attempted_account,
+        actor_id=success.actor_id,
+        window_start=success.occurred_at - config.window,
+        window_end=success.occurred_at,
+        threshold=config.threshold,
+        window_microseconds=config.window_microseconds,
+        failure_count=len(failures),
+        failure_event_ids=failure_event_ids,
+        success_event_id=success.event_id,
+        evidence_event_ids=(*failure_event_ids, success.event_id),
+        source_ips=tuple(sorted(source_ips)),
+        session_id=success.session_id,
+        reason=(
+            f"{len(failures)} failed logins for {success.attempted_account} "
+            f"in {success.organization_id} were followed by a successful login"
+        ),
+    )
+
+
+def _alert_key(config: FailedLoginSuccessConfig, success_event_id: str) -> str:
+    """Configuration is part of the identity so differently tuned runs never collide."""
+    return (
+        f"{RULE_ID}:{RULE_VERSION}:"
+        f"threshold={config.threshold}:"
+        f"window_us={config.window_microseconds}:"
+        f"{success_event_id}"
+    )
+
+
 def _deduplicate_and_sort(
     events: Iterable[SecurityEvent],
-) -> tuple[SecurityEvent, ...]:
+) -> list[SecurityEvent]:
     unique_events: dict[str, SecurityEvent] = {}
     for event in events:
         existing = unique_events.get(event.event_id)
@@ -167,21 +180,8 @@ def _deduplicate_and_sort(
             )
         elif event.ingested_at < existing.ingested_at:
             unique_events[event.event_id] = event
-    return tuple(
-        sorted(
-            unique_events.values(),
-            key=lambda event: (event.occurred_at, event.event_id),
-        )
+
+    return sorted(
+        unique_events.values(),
+        key=lambda event: (event.occurred_at, event.event_id),
     )
-
-
-def _timedelta_microseconds(value: timedelta) -> int:
-    return (
-        value.days * 86_400_000_000
-        + value.seconds * 1_000_000
-        + value.microseconds
-    )
-
-
-def _format_utc(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
