@@ -100,6 +100,7 @@ def search_events(
     *,
     organization_id: str | None = None,
     attempted_account: str | None = None,
+    actor_id: str | None = None,
     event_type: str | None = None,
     limit: int = 100,
 ) -> list[SecurityEvent]:
@@ -116,6 +117,9 @@ def search_events(
     if attempted_account is not None:
         conditions.append("attempted_account = %s")
         params.append(attempted_account.casefold())
+    if actor_id is not None:
+        conditions.append("actor_id = %s")
+        params.append(actor_id)
     if event_type is not None:
         conditions.append("event_type = %s")
         params.append(event_type)

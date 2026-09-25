@@ -12,8 +12,16 @@ EVENT_TYPES = {
     "login_failed",
     "login_succeeded",
     "access_denied",
+    "document_created",
+    "document_updated",
     "document_downloaded",
     "role_changed",
+}
+LOGIN_EVENT_TYPES = {"login_failed", "login_succeeded"}
+DOCUMENT_EVENT_TYPES = {
+    "document_created",
+    "document_updated",
+    "document_downloaded",
 }
 SOURCES = {"application", "fixture", "cloudtrail"}
 OUTCOMES = {"success", "denied", "failure"}
@@ -24,6 +32,8 @@ REQUIRED_OUTCOMES = {
     "login_failed": "failure",
     "login_succeeded": "success",
     "access_denied": "denied",
+    "document_created": "success",
+    "document_updated": "success",
     "document_downloaded": "success",
     "role_changed": "success",
 }
@@ -149,10 +159,12 @@ def _validate_event_shape(
         raise EventValidationError(
             f"{event_type} outcome must be {required_outcome}"
         )
-    if organization_id is None:
+    # Login events may lack an organization: an unknown account has none to
+    # attribute, and the lab analyst belongs to no tenant.
+    if organization_id is None and event_type not in LOGIN_EVENT_TYPES:
         raise EventValidationError(f"{event_type} requires organization_id")
 
-    if event_type in {"login_failed", "login_succeeded"}:
+    if event_type in LOGIN_EVENT_TYPES:
         _require_present(attempted_account, event_type, "attempted_account")
 
     if event_type != "login_failed":
@@ -164,10 +176,10 @@ def _validate_event_shape(
         if resource_type == "document":
             _require_present(resource_id, event_type, "resource_id")
 
-    if event_type == "document_downloaded":
+    if event_type in DOCUMENT_EVENT_TYPES:
         if resource_type != "document":
             raise EventValidationError(
-                "document_downloaded resource_type must be document"
+                f"{event_type} resource_type must be document"
             )
         _require_present(resource_id, event_type, "resource_id")
 

@@ -94,7 +94,6 @@ def test_offset_timestamp_is_normalized_to_utc() -> None:
         ({"source": "browser"}, "source must be one of"),
         ({"source_ip": "999.1.1.1"}, "must be a valid IPv4 or IPv6"),
         ({"outcome": "success"}, "login_failed outcome must be failure"),
-        ({"organization_id": None}, "requires organization_id"),
         ({"metadata": []}, "metadata must be a JSON object"),
         (
             {"metadata": {"access_token": "secret"}},
@@ -110,6 +109,44 @@ def test_invalid_events_are_rejected(
 ) -> None:
     with pytest.raises(EventValidationError, match=message):
         parse_event({**BASE_EVENT, **change})
+
+
+DOCUMENT_DENIAL = {
+    **BASE_EVENT,
+    "event_type": "access_denied",
+    "actor_id": "user-bob",
+    "attempted_account": None,
+    "session_id": "session-1",
+    "resource_type": "document",
+    "resource_id": "doc-1",
+    "outcome": "denied",
+}
+
+
+def test_login_events_may_lack_an_organization() -> None:
+    event = parse_event({**BASE_EVENT, "organization_id": None})
+
+    assert event.organization_id is None
+
+
+def test_non_login_events_require_an_organization() -> None:
+    with pytest.raises(
+        EventValidationError, match="access_denied requires organization_id"
+    ):
+        parse_event({**DOCUMENT_DENIAL, "organization_id": None})
+
+
+@pytest.mark.parametrize("event_type", ["document_created", "document_updated"])
+def test_document_change_events_require_a_document_resource(
+    event_type: str,
+) -> None:
+    valid = {**DOCUMENT_DENIAL, "event_type": event_type, "outcome": "success"}
+
+    assert parse_event(valid).event_type == event_type
+    with pytest.raises(EventValidationError, match="resource_type must be document"):
+        parse_event({**valid, "resource_type": "alert"})
+    with pytest.raises(EventValidationError, match="outcome must be success"):
+        parse_event({**valid, "outcome": "denied"})
 
 
 def test_non_object_record_is_rejected() -> None:

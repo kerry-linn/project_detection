@@ -30,9 +30,24 @@ an authorization control. Tests must prove that members and organization adminis
 cannot access global events or alerts through direct API calls.
 
 Authentication must use a maintained authentication and password-hashing library or an
-established identity provider. The chosen mechanism, session lifecycle, and logout
-behavior must be recorded here before authentication is implemented. Custom cryptography
-is prohibited.
+established identity provider. Custom cryptography is prohibited.
+
+**Chosen mechanism (Days 7–9):** local accounts with Argon2id password hashes from the
+maintained `pwdlib[argon2]` library, and opaque database-backed bearer sessions.
+
+- `POST /auth/login` canonicalizes the login (trim + casefold), verifies the password, and
+  returns one generic `401` for both unknown accounts and wrong passwords. Unknown accounts
+  are verified against a dummy hash so response time does not reveal account existence.
+- A successful login creates a 256-bit random token (`secrets.token_urlsafe(32)`), stores
+  only its SHA-256 digest with a separate opaque `session_id`, and returns the raw token
+  once. A fast digest is appropriate because the token is high-entropy, not a password.
+- Sessions expire after `SESSION_LIFETIME_MINUTES` (default eight hours). `POST /auth/logout`
+  sets `revoked_at`. There are no refresh tokens, password resets, or MFA.
+- Role and organization come only from the `users` table, never from the request.
+
+Keeping authentication local gives the server direct visibility into every login outcome,
+so `login_failed` and `login_succeeded` are recorded from the actual decision instead of
+being reconstructed from a third-party log stream.
 
 For v0.1, account lockout is intentionally omitted so failed-login telemetry can exercise
 R1. This is a documented preventive-control gap, not a recommended production design.
@@ -54,8 +69,8 @@ coercion, and unknown strings are rejected.
 | `ingested_at` | Time the platform accepted the event |
 | `source` | `application`, `fixture`, or `cloudtrail` |
 | `event_type` | Controlled event name |
-| `organization_id` | Organization scope, nullable only when no scope can be established |
-| `actor_id` | Authenticated actor, or null for an unknown failed-login account |
+| `organization_id` | Organization scope; null only for login events of an unknown account or the tenant-less lab analyst |
+| `actor_id` | Authenticated actor; application login failures leave it null because nobody authenticated |
 | `attempted_account` | Canonical fictional login identifier used for login correlation |
 | `target_actor_id` | Account affected by a role change |
 | `previous_role` | Typed role before a role change |
@@ -74,12 +89,17 @@ Initial application event types:
 - `login_failed`
 - `login_succeeded`
 - `access_denied`
+- `document_created`
+- `document_updated`
 - `document_downloaded`
 - `role_changed`
 
 `access_denied` is generic so attempts against documents, analyst APIs, and administrative
 routes share one security concept. R2 considers only events where
-`resource_type=document`.
+`resource_type=document`. There is deliberately no separate "document access denied" type.
+
+`document_created` and `document_updated` record successful state changes with the
+document ID and, for updates, the names of the changed fields; never titles or bodies.
 
 `document_downloaded` means a successful request to a distinct, explicit document download
 route. Reading a document detail page is not a download. The route records the event only
@@ -127,7 +147,22 @@ Database access uses parameterized SQL or an ORM.
   event.
 - `detection_runs` records rule version, configuration, timing, status, scanned event-time
   range, alert outcome counts, and a failure message.
-- `users`, `documents`, `case_notes`, and disposition fields remain planned.
+- `case_notes` and disposition fields remain planned.
+
+**Implemented in Days 7–9** ([`backend/migrations/002_application.sql`](../backend/migrations/002_application.sql)):
+
+- `organizations`, `users` (unique canonical login, role, Argon2 hash; the lab analyst is
+  the only role without an organization, enforced by `CHECK`), `sessions` (token digest,
+  expiry, revocation), and `documents` (owner and organization).
+- A composite foreign key `documents (owner_id, organization_id) -> users (user_id,
+  organization_id)` makes it impossible to store a document owned by someone outside its
+  organization.
+- `security_events` accepts the two document change types and a null organization only for
+  login events; an index on `(actor_id, occurred_at)` serves the analyst actor filter.
+- `alerts` is now rule-neutral: `failure_count` became `match_count`, account and
+  organization are nullable (an alert needs an account or an actor), and R2 adds
+  `cooldown_microseconds` and `suppression_until`. `alert_events` gains the
+  `denied_document_access` evidence role.
 
 ## Pipeline and trust boundaries
 
@@ -149,16 +184,33 @@ The browser-facing API never accepts arbitrary security events.
 
 The implemented collector boundary (`POST /internal/events/batch`) accepts only `fixture`
 and `cloudtrail` sources; `application` events are reserved for server routes. The server
-assigns `ingested_at`, and a client-supplied value is rejected. Lab authentication uses two
-distinct static bearer tokens from the environment, compared with
-`secrets.compare_digest`: the collector token may only ingest, and the analyst token may
-only read. This is a lab mechanism, not the final identity design, which must be chosen
-before Days 7–9.
+assigns `ingested_at`, and a client-supplied value is rejected.
 
-For state-changing routes, failure to persist the audit event fails the business
-transaction. For denied requests, an audit-write failure is surfaced and measured, but
-the platform does not claim tamper-proof or lossless logging. The implementation must
-document any remaining failure mode.
+Days 7–9 separate three trust domains:
+
+| Domain | Credential | May reach |
+| --- | --- | --- |
+| Application users (members, organization admins) | User session | `/auth/*`, `/documents*` within their organization |
+| Lab analyst | User session with the `lab_analyst` role | `/auth/*`, `/security/*`; no implicit document access |
+| Trusted collector | Static `COLLECTOR_TOKEN`, compared with `secrets.compare_digest` | `POST /internal/events/batch` only |
+
+A session token presented to the collector route, or the collector token presented to a
+session route, is simply not a valid credential for that realm and returns `401`. A valid
+session with the wrong role returns `403`.
+
+Application events are built by [`backend/audit.py`](../backend/audit.py), validated by the
+same `parse_event`, and inserted with `source=application`. `source_ip` is the socket peer;
+`X-Forwarded-For` is ignored because no trusted proxy is configured.
+
+**Audit-failure behavior.** Successful creates and updates insert the document change and
+its audit event in one transaction; if the audit insert fails, the change rolls back and
+the request returns `500` (tested). A denial writes its `access_denied` event and commits
+before the `403`/`404` is returned. If that write fails, the request returns `500` instead
+of the denial, so the caller still receives no document, but the attempt leaves no event. The
+lab does not claim tamper-proof or lossless logging.
+
+Denied `/security/*` requests are rejected with `403` but not recorded as events in v0.1;
+R2 does not need them, and adding them would only expand the resource taxonomy.
 
 ## Detection specification template
 
@@ -192,6 +244,11 @@ choices, not validated industry defaults.
 A separate practice query groups by source IP and counts distinct attempted accounts to
 demonstrate password-spray reasoning; it is not part of R1.
 
+Days 7–9 feed R1 from the real login route. A null organization is part of the grouping
+key rather than a reason to skip the event, so the tenant-less lab analyst account is
+also covered. No previously valid input changes result, because events without an
+organization could not exist before this change.
+
 The Days 3–4 implementation is a pure batch function called by
 `python -m scripts.detect_r1`. It sorts validated events by event time and event ID,
 deduplicates source-equivalent replayed records while ignoring collection time, and
@@ -207,28 +264,43 @@ evidence changed are updated with their links replaced, and identical results ar
 untouched. A late failure inside an existing window therefore extends the same alert
 instead of creating a second one.
 
-### R2 — Repeated denied document access (v0.1)
+### R2 — Repeated denied document access (v0.1, implemented)
 
 - **Hypothesis:** attempts to reach many unauthorized documents may indicate enumeration
   or broken client authorization.
-- **Required fields:** `access_denied`, actor, organization, document resource type and ID,
-  event time, and event ID.
-- **Grouping:** actor and organization.
-- **Window:** rolling five-minute interval with documented inclusive boundaries.
-- **Threshold:** at least five distinct document IDs.
+- **Required fields:** `access_denied` with `resource_type=document`, actor, organization,
+  resource ID, event time, and event ID. Other denials (for example `resource_type=alert`)
+  are ignored.
+- **Grouping:** organization and actor. The organization is the actor's own tenant, even
+  when the denied document belongs to another tenant.
+- **Window:** for each denial at time `t`, the interval `[t-5m, t]`, inclusive at both
+  ends. Unlike R1, the current event counts, because it may be the fifth document.
+- **Threshold:** at least five distinct `resource_id` values. Repeated requests for one
+  document never satisfy it.
 - **Severity:** medium; repeated denials are suspicious but not evidence of data exposure.
-- **Evidence:** all qualifying denials and requested resource identifiers, without document
-  content or unauthorized tenant details.
-- **Identity:** one stored episode key per actor, organization, rule version, and episode
-  start.
-- **Suppression:** maintain one open episode during a configurable cooldown and extend its
-  evidence with qualifying events.
+- **Evidence:** every denial in the window at the crossing, plus every later denial in the
+  episode, with the distinct requested document IDs and source IPs. Evidence never
+  contains document content or the foreign tenant's identifiers.
+- **Identity:** rule ID/version, threshold, exact window and cooldown durations, actor
+  organization, actor, and the event ID that first crossed the threshold. Later evidence
+  never changes the key.
+- **Suppression:** a 15-minute inactivity cooldown. Once an episode opens, each later
+  denial within 15 minutes of the previous one (inclusive) joins it and sets
+  `suppression_until = newest denial + 15m`. A gap longer than the cooldown closes the
+  episode; a new episode requires crossing the threshold again from fresh events.
+- **Denials counted:** same-organization ownership failures (`403`), cross-organization
+  requests, and nonexistent IDs (both `404`). Guessing IDs is enumeration too, so all
+  three are recorded, with the reason in `metadata.reason`.
 - **Benign causes:** stale links, old clients, bookmarks, or recently changed membership.
-- **Blind spots:** repeated attempts against one document, unauthenticated enumeration,
-  identity changes, and missing denial telemetry.
+- **Blind spots:** repeated attempts against one document, slow probing under five per
+  window, unauthenticated enumeration, identity changes, and missing denial telemetry. A
+  late denial that makes an earlier event the crossing produces a new key; the earlier
+  alert remains stored.
 - **ATT&CK:** no forced mapping; the event alone does not establish a specific technique.
-- **Tests:** repeated same document, five distinct documents, cross-organization separation,
-  exact window boundaries, episode extension, cooldown expiry, shuffled input, and replay.
+- **Tests:** below/at/above threshold, repeated same document, non-document denials,
+  actor and organization isolation, both window boundaries, key anchoring, episode
+  extension on the same key, cooldown expiry into a new key, shuffled input, replay,
+  database reruns, analyst status preservation, and five denials through real routes.
 
 ### R3 — Privilege change followed by downloads (v1.0)
 
@@ -325,8 +397,12 @@ inserts affect traversal.
 
 Implemented in Days 5–6: `POST /internal/events/batch`, `GET /security/events` (filters and
 a bounded `limit`; cursor pagination remains planned), `GET /security/alerts`, and
-`GET /security/alerts/{alert_key}`. Security reads currently accept only the analyst
-credential; a scoped read-only collector credential is not implemented.
+`GET /security/alerts/{alert_key}`.
+
+Implemented in Days 7–9: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`,
+`GET/POST /documents`, and `GET/PATCH /documents/{id}`. `/security/*` now requires a
+lab-analyst session, and `GET /security/events` gains an `actor_id` filter. The download
+route, alert updates, notes, and a scoped read-only collector credential remain planned.
 
 ## Engineering rules
 

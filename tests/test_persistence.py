@@ -166,7 +166,7 @@ def test_late_failure_updates_evidence_on_the_same_alert(
 
     assert summary.alerts_updated == 1
     assert alert.alert_key == ALERT_KEY
-    assert alert.failure_count == 6
+    assert alert.match_count == 6
     assert alert.status == "investigating"
     assert ("late-failure", "failed_login") in evidence
     assert len(evidence) == 7

@@ -1,5 +1,10 @@
 # Days 5–6 Implementation Walkthrough
 
+> **Superseded in Days 7–9:** the static `ANALYST_TOKEN` was replaced by a lab-analyst user
+> session from `POST /auth/login`, and `alerts.failure_count` became the rule-neutral
+> `match_count`. Use the analyst session token wherever this page shows `$ANALYST_TOKEN`.
+> See the [Days 7–9 walkthrough](DAYS_7_9.md).
+
 Days 5–6 turn the batch scripts into a small security pipeline:
 
 ```text

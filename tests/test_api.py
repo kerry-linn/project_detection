@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.api import create_app
 from backend.config import ConfigurationError, Settings
 from backend.db import connect
 from backend.detection_runner import run_failed_login_detection
@@ -17,11 +16,13 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 EXPECTED = json.loads((FIXTURES / "expected" / "days_5_6.json").read_text())
 ALERT_KEY = EXPECTED["alert"]["alert_key"]
 
-COLLECTOR_TOKEN = "collector-token-for-tests"
-ANALYST_TOKEN = "analyst-token-for-tests"
-COLLECTOR = {"Authorization": f"Bearer {COLLECTOR_TOKEN}"}
-ANALYST = {"Authorization": f"Bearer {ANALYST_TOKEN}"}
+COLLECTOR = {"Authorization": "Bearer collector-token-for-tests"}
 UNKNOWN = {"Authorization": "Bearer not-a-configured-token"}
+ACCOUNTS = {
+    "analyst": "analyst@lab.example.test",
+    "member": "alice@alpha.example.test",
+    "admin": "admin@alpha.example.test",
+}
 
 VALID_EVENT = {
     "event_id": "api-event-1",
@@ -38,28 +39,39 @@ VALID_EVENT = {
 
 
 @pytest.fixture
-def client(database_url: str) -> TestClient:
-    settings = Settings(
-        database_url=database_url,
-        collector_token=COLLECTOR_TOKEN,
-        analyst_token=ANALYST_TOKEN,
-    )
-    return TestClient(create_app(settings))
+def analyst(login_as) -> dict[str, str]:
+    return login_as(ACCOUNTS["analyst"])
+
+
+def _credential(name: str, login_as) -> dict[str, str]:
+    if name == "none":
+        return {}
+    if name == "unknown":
+        return UNKNOWN
+    if name == "collector":
+        return COLLECTOR
+    return login_as(ACCOUNTS[name])
 
 
 @pytest.mark.parametrize(
-    ("headers", "expected_status"),
-    [({}, 401), (UNKNOWN, 401), (ANALYST, 403)],
+    ("credential", "expected_status"),
+    [("none", 401), ("unknown", 401), ("analyst", 401), ("member", 401)],
 )
 def test_ingestion_requires_the_collector_credential(
-    client: TestClient, headers: dict[str, str], expected_status: int
+    client: TestClient,
+    login_as,
+    analyst: dict[str, str],
+    credential: str,
+    expected_status: int,
 ) -> None:
     response = client.post(
-        "/internal/events/batch", json={"events": [VALID_EVENT]}, headers=headers
+        "/internal/events/batch",
+        json={"events": [VALID_EVENT]},
+        headers=_credential(credential, login_as),
     )
 
     assert response.status_code == expected_status
-    assert _stored_event_count(client) == 0
+    assert _fixture_event_count(client, analyst) == 0
 
 
 def test_authentication_is_checked_before_body_validation(
@@ -75,19 +87,29 @@ def test_authentication_is_checked_before_body_validation(
     ["/security/events", "/security/alerts", f"/security/alerts/{ALERT_KEY}"],
 )
 @pytest.mark.parametrize(
-    ("headers", "expected_status"),
-    [({}, 401), (UNKNOWN, 401), (COLLECTOR, 403)],
+    ("credential", "expected_status"),
+    [
+        ("none", 401),
+        ("unknown", 401),
+        ("collector", 401),
+        ("member", 403),
+        ("admin", 403),
+    ],
 )
-def test_security_reads_require_the_analyst_credential(
-    client: TestClient, path: str, headers: dict[str, str], expected_status: int
+def test_security_reads_require_the_lab_analyst(
+    client: TestClient,
+    login_as,
+    path: str,
+    credential: str,
+    expected_status: int,
 ) -> None:
-    response = client.get(path, headers=headers)
+    response = client.get(path, headers=_credential(credential, login_as))
 
     assert response.status_code == expected_status
 
 
 def test_ingest_detect_and_follow_alert_to_raw_evidence(
-    client: TestClient, database_url: str
+    client: TestClient, database_url: str, analyst: dict[str, str]
 ) -> None:
     records, skipped = read_records(FIXTURES / "days_1_2.jsonl")
 
@@ -101,8 +123,8 @@ def test_ingest_detect_and_follow_alert_to_raw_evidence(
         with connect(database_url) as conn:
             run_failed_login_detection(conn)
 
-    alerts = client.get("/security/alerts", headers=ANALYST).json()
-    detail = client.get(f"/security/alerts/{ALERT_KEY}", headers=ANALYST).json()
+    alerts = client.get("/security/alerts", headers=analyst).json()
+    detail = client.get(f"/security/alerts/{ALERT_KEY}", headers=analyst).json()
 
     expected_first = EXPECTED["first_replay"]
     assert skipped == expected_first["skipped_lines"]
@@ -121,19 +143,21 @@ def test_ingest_detect_and_follow_alert_to_raw_evidence(
     assert detail["attempted_account"] == expected_alert["attempted_account"]
     assert detail["window_start"] == expected_alert["window_start"]
     assert detail["window_end"] == expected_alert["window_end"]
-    assert detail["failure_count"] == expected_alert["failure_count"]
+    assert detail["match_count"] == expected_alert["failure_count"]
     assert detail["source_ips"] == expected_alert["source_ips"]
     assert [
         [item["event_id"], item["evidence_role"]] for item in detail["evidence"]
     ] == expected_alert["evidence"]
 
 
-def test_server_assigns_collection_time(client: TestClient) -> None:
+def test_server_assigns_collection_time(
+    client: TestClient, analyst: dict[str, str]
+) -> None:
     before = datetime.now(timezone.utc)
     client.post("/internal/events/batch", json={"events": [VALID_EVENT]}, headers=COLLECTOR)
     after = datetime.now(timezone.utc)
 
-    event = client.get("/security/events", headers=ANALYST).json()[0]
+    event = _fixture_events(client, analyst)[0]
     ingested_at = datetime.fromisoformat(event["ingested_at"].replace("Z", "+00:00"))
 
     assert before <= ingested_at <= after
@@ -150,7 +174,7 @@ def test_server_assigns_collection_time(client: TestClient) -> None:
     ],
 )
 def test_untrusted_or_unknown_fields_are_rejected(
-    client: TestClient, change: dict[str, object]
+    client: TestClient, analyst: dict[str, str], change: dict[str, object]
 ) -> None:
     response = client.post(
         "/internal/events/batch",
@@ -159,10 +183,12 @@ def test_untrusted_or_unknown_fields_are_rejected(
     )
 
     assert response.status_code == 422
-    assert _stored_event_count(client) == 0
+    assert _fixture_event_count(client, analyst) == 0
 
 
-def test_invalid_event_rejects_the_batch_with_reasons(client: TestClient) -> None:
+def test_invalid_event_rejects_the_batch_with_reasons(
+    client: TestClient, analyst: dict[str, str]
+) -> None:
     naive_timestamp = {
         **VALID_EVENT,
         "event_id": "api-event-2",
@@ -179,7 +205,7 @@ def test_invalid_event_rejects_the_batch_with_reasons(client: TestClient) -> Non
     assert response.json()["detail"]["invalid_events"] == [
         {"index": 1, "reason": "occurred_at must include a timezone"}
     ]
-    assert _stored_event_count(client) == 0
+    assert _fixture_event_count(client, analyst) == 0
 
 
 def test_empty_and_oversized_batches_are_rejected(client: TestClient) -> None:
@@ -195,7 +221,7 @@ def test_empty_and_oversized_batches_are_rejected(client: TestClient) -> None:
 
 
 def test_reused_event_id_with_different_content_returns_conflict(
-    client: TestClient,
+    client: TestClient, analyst: dict[str, str]
 ) -> None:
     client.post("/internal/events/batch", json={"events": [VALID_EVENT]}, headers=COLLECTOR)
     changed = {**VALID_EVENT, "source_ip": "203.0.113.99"}
@@ -206,7 +232,7 @@ def test_reused_event_id_with_different_content_returns_conflict(
         json={"events": [new_event, changed]},
         headers=COLLECTOR,
     )
-    events = client.get("/security/events", headers=ANALYST).json()
+    events = _fixture_events(client, analyst)
 
     assert response.status_code == 409
     assert response.json()["detail"]["event_id"] == "api-event-1"
@@ -216,7 +242,7 @@ def test_reused_event_id_with_different_content_returns_conflict(
 
 
 def test_event_search_filters_by_canonical_account_newest_first(
-    client: TestClient,
+    client: TestClient, analyst: dict[str, str]
 ) -> None:
     records, _ = read_records(FIXTURES / "days_1_2.jsonl")
     client.post("/internal/events/batch", json={"events": records}, headers=COLLECTOR)
@@ -228,7 +254,7 @@ def test_event_search_filters_by_canonical_account_newest_first(
             "attempted_account": "ALICE@example.test",
             "limit": 3,
         },
-        headers=ANALYST,
+        headers=analyst,
     )
 
     assert response.status_code == 200
@@ -239,19 +265,26 @@ def test_event_search_filters_by_canonical_account_newest_first(
     ]
 
 
-def test_unknown_alert_returns_not_found(client: TestClient) -> None:
-    response = client.get("/security/alerts/not-a-real-alert", headers=ANALYST)
+def test_unknown_alert_returns_not_found(
+    client: TestClient, analyst: dict[str, str]
+) -> None:
+    response = client.get("/security/alerts/not-a-real-alert", headers=analyst)
 
     assert response.status_code == 404
 
 
-def test_settings_require_distinct_sufficiently_long_tokens() -> None:
-    with pytest.raises(ConfigurationError, match="must differ"):
-        Settings("postgresql://unused", COLLECTOR_TOKEN, COLLECTOR_TOKEN)
+def test_settings_require_a_sufficiently_long_collector_token() -> None:
     with pytest.raises(ConfigurationError, match="at least 16"):
-        Settings("postgresql://unused", "short", ANALYST_TOKEN)
+        Settings("postgresql://unused", "short")
 
 
-def _stored_event_count(client: TestClient) -> int:
-    response = client.get("/security/events", headers=ANALYST)
-    return len(response.json())
+def _fixture_events(
+    client: TestClient, analyst: dict[str, str]
+) -> list[dict[str, object]]:
+    """Login telemetry from the test's own analyst session is excluded."""
+    response = client.get("/security/events", headers=analyst)
+    return [event for event in response.json() if event["source"] == "fixture"]
+
+
+def _fixture_event_count(client: TestClient, analyst: dict[str, str]) -> int:
+    return len(_fixture_events(client, analyst))

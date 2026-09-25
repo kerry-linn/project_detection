@@ -4,18 +4,25 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from backend.db import Connection
-from detections.failed_login_success import (
-    RULE_ID,
-    RULE_VERSION,
-    FailedLoginSuccessConfig,
-)
 
 MAX_ERROR_LENGTH = 1_000
 
 
 @dataclass(frozen=True)
+class RuleRun:
+    """Rule identity and configuration recorded on every run."""
+
+    rule_id: str
+    rule_version: str
+    threshold: int
+    window_microseconds: int
+    cooldown_microseconds: int | None = None
+
+
+@dataclass(frozen=True)
 class DetectionRunSummary:
     run_id: int
+    rule_id: str
     events_scanned: int
     first_event_at: datetime | None
     last_event_at: datetime | None
@@ -25,16 +32,23 @@ class DetectionRunSummary:
     alerts_unchanged: int
 
 
-def start_run(conn: Connection, config: FailedLoginSuccessConfig) -> int:
+def start_run(conn: Connection, rule: RuleRun) -> int:
     row = conn.execute(
         """
         INSERT INTO detection_runs (
-            rule_id, rule_version, threshold, window_microseconds
+            rule_id, rule_version, threshold, window_microseconds,
+            cooldown_microseconds
         )
-        VALUES (%s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s)
         RETURNING run_id
         """,
-        (RULE_ID, RULE_VERSION, config.threshold, config.window_microseconds),
+        (
+            rule.rule_id,
+            rule.rule_version,
+            rule.threshold,
+            rule.window_microseconds,
+            rule.cooldown_microseconds,
+        ),
     ).fetchone()
     return row["run_id"]
 

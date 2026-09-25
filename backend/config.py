@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 MIN_TOKEN_LENGTH = 16
+DEFAULT_SESSION_LIFETIME = timedelta(hours=8)
 
 
 class ConfigurationError(RuntimeError):
@@ -18,21 +20,15 @@ class ConfigurationError(RuntimeError):
 class Settings:
     database_url: str
     collector_token: str
-    analyst_token: str
+    session_lifetime: timedelta = DEFAULT_SESSION_LIFETIME
 
     def __post_init__(self) -> None:
-        for name, token in [
-            ("COLLECTOR_TOKEN", self.collector_token),
-            ("ANALYST_TOKEN", self.analyst_token),
-        ]:
-            if len(token) < MIN_TOKEN_LENGTH:
-                raise ConfigurationError(
-                    f"{name} must be at least {MIN_TOKEN_LENGTH} characters"
-                )
-        if self.collector_token == self.analyst_token:
+        if len(self.collector_token) < MIN_TOKEN_LENGTH:
             raise ConfigurationError(
-                "COLLECTOR_TOKEN and ANALYST_TOKEN must differ"
+                f"COLLECTOR_TOKEN must be at least {MIN_TOKEN_LENGTH} characters"
             )
+        if self.session_lifetime <= timedelta(0):
+            raise ConfigurationError("SESSION_LIFETIME_MINUTES must be positive")
 
 
 def require_env(name: str) -> str:
@@ -43,8 +39,17 @@ def require_env(name: str) -> str:
 
 
 def load_settings() -> Settings:
+    lifetime_minutes = os.environ.get("SESSION_LIFETIME_MINUTES", "").strip()
+    session_lifetime = DEFAULT_SESSION_LIFETIME
+    if lifetime_minutes:
+        try:
+            session_lifetime = timedelta(minutes=int(lifetime_minutes))
+        except ValueError as error:
+            raise ConfigurationError(
+                "SESSION_LIFETIME_MINUTES must be an integer"
+            ) from error
     return Settings(
         database_url=require_env("DATABASE_URL"),
         collector_token=require_env("COLLECTOR_TOKEN"),
-        analyst_token=require_env("ANALYST_TOKEN"),
+        session_lifetime=session_lifetime,
     )

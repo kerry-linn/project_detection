@@ -4,11 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Iterable
 
-from security_events import (
-    SecurityEvent,
-    events_have_same_source_content,
-    format_utc,
-)
+from detections.common import deduplicate_and_sort, duration_microseconds
+from security_events import SecurityEvent, format_utc
 
 RULE_ID = "R1_FAILED_LOGINS_FOLLOWED_BY_SUCCESS"
 RULE_VERSION = "1.0"
@@ -30,11 +27,7 @@ class FailedLoginSuccessConfig:
 
     @property
     def window_microseconds(self) -> int:
-        return (
-            self.window.days * 86_400_000_000
-            + self.window.seconds * 1_000_000
-            + self.window.microseconds
-        )
+        return duration_microseconds(self.window)
 
 
 @dataclass(frozen=True)
@@ -43,7 +36,7 @@ class FailedLoginSuccessAlert:
     rule_id: str
     rule_version: str
     severity: str
-    organization_id: str
+    organization_id: str | None
     attempted_account: str
     actor_id: str | None
     window_start: datetime
@@ -86,11 +79,13 @@ def detect_failed_logins_followed_by_success(
     config: FailedLoginSuccessConfig | None = None,
 ) -> tuple[FailedLoginSuccessAlert, ...]:
     rule_config = config or FailedLoginSuccessConfig()
-    failures_by_entity: dict[tuple[str, str], list[SecurityEvent]] = {}
+    # A None organization is part of the key: the lab analyst belongs to no
+    # tenant, and its account still needs protection.
+    failures_by_entity: dict[tuple[str | None, str], list[SecurityEvent]] = {}
     alerts: list[FailedLoginSuccessAlert] = []
 
-    for event in _deduplicate_and_sort(events):
-        if event.organization_id is None or event.attempted_account is None:
+    for event in deduplicate_and_sort(events):
+        if event.attempted_account is None:
             continue
         entity = (event.organization_id, event.attempted_account)
 
@@ -151,7 +146,8 @@ def _build_alert(
         session_id=success.session_id,
         reason=(
             f"{len(failures)} failed logins for {success.attempted_account} "
-            f"in {success.organization_id} were followed by a successful login"
+            f"in {success.organization_id or 'no organization'} were followed "
+            "by a successful login"
         ),
     )
 
@@ -163,25 +159,4 @@ def _alert_key(config: FailedLoginSuccessConfig, success_event_id: str) -> str:
         f"threshold={config.threshold}:"
         f"window_us={config.window_microseconds}:"
         f"{success_event_id}"
-    )
-
-
-def _deduplicate_and_sort(
-    events: Iterable[SecurityEvent],
-) -> list[SecurityEvent]:
-    unique_events: dict[str, SecurityEvent] = {}
-    for event in events:
-        existing = unique_events.get(event.event_id)
-        if existing is None:
-            unique_events[event.event_id] = event
-        elif not events_have_same_source_content(existing, event):
-            raise ValueError(
-                f"conflicting records for event_id: {event.event_id}"
-            )
-        elif event.ingested_at < existing.ingested_at:
-            unique_events[event.event_id] = event
-
-    return sorted(
-        unique_events.values(),
-        key=lambda event: (event.occurred_at, event.event_id),
     )

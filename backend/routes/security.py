@@ -21,6 +21,7 @@ FilterValue = Annotated[str | None, Query(max_length=256)]
 def list_events(
     organization_id: FilterValue = None,
     attempted_account: FilterValue = None,
+    actor_id: FilterValue = None,
     event_type: FilterValue = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     settings: Settings = Depends(get_settings),
@@ -30,6 +31,7 @@ def list_events(
             conn,
             organization_id=organization_id,
             attempted_account=attempted_account,
+            actor_id=actor_id,
             event_type=event_type,
             limit=limit,
         )
@@ -57,10 +59,13 @@ def get_alert(
         evidence = alert_repository.list_alert_evidence(conn, alert_key)
 
     source_ips = set()
+    resource_ids = set()
     evidence_records = []
     for item in evidence:
         if item.event.source_ip is not None:
             source_ips.add(item.event.source_ip)
+        if item.event.resource_id is not None:
+            resource_ids.add(item.event.resource_id)
         evidence_records.append(
             {"evidence_role": item.evidence_role, **item.event.to_dict()}
         )
@@ -68,5 +73,6 @@ def get_alert(
     return AlertDetail(
         **asdict(alert),
         source_ips=sorted(source_ips),
+        resource_ids=sorted(resource_ids),
         evidence=evidence_records,
     )
