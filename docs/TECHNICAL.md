@@ -404,6 +404,10 @@ Implemented in Days 7–9: `POST /auth/login`, `POST /auth/logout`, `GET /auth/m
 lab-analyst session, and `GET /security/events` gains an `actor_id` filter. The download
 route, alert updates, notes, and a scoped read-only collector credential remain planned.
 
+Days 10–11 add a React client over these routes and no new endpoints. The client stores
+only the opaque session token and re-reads the profile from `GET /auth/me`; its role-aware
+navigation is a usability feature, and every boundary above is still enforced by the API.
+
 ## Engineering rules
 
 - Detection functions remain independent of HTTP and database code. The CLI and worker

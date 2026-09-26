@@ -4,13 +4,14 @@ A portfolio-scale security monitoring lab built around a fictional document-shar
 application. The project is designed to build practical skills in structured event
 handling, detection engineering, Python, SQL, APIs, and security investigation.
 
-> **Status:** Days 1–9 are complete. A small document application with two fictional
+> **Status:** Days 1–11 are complete. A small document application with two fictional
 > organizations authenticates users and enforces tenant and ownership rules on the
 > server. Its login and authorization decisions become trusted security events, stored in
 > PostgreSQL alongside collector-ingested events. Two deterministic detections run over
 > those events: failed logins followed by success (R1), and repeated denied document
 > access (R2). Their results are stored as deduplicated alerts linked to raw evidence and
-> exposed only to the lab analyst. The React investigation UI remains planned.
+> exposed only to the lab analyst. A minimal React interface lets users browse their
+> documents and lets the analyst follow each alert to its supporting events.
 
 ## Current capabilities
 
@@ -33,18 +34,23 @@ handling, detection engineering, Python, SQL, APIs, and security investigation.
   collector credential
 - Behavioral, persistence, API, and authorization tests against real PostgreSQL,
   including cross-user, cross-organization, admin-scope, and analyst-only cases
+- A React and TypeScript client: login, document list/detail, and an analyst alert list
+  with filters and an alert detail page showing the reason, threshold check, and
+  time-ordered raw evidence; authorization stays entirely server-side
 
 Walkthroughs of the code and data flow:
 
 - [Days 1–4: parsing and the R1 detection](docs/DAYS_1_4.md)
 - [Days 5–6: PostgreSQL, persistence, and APIs](docs/DAYS_5_6.md)
 - [Days 7–9: authentication, documents, application events, and R2](docs/DAYS_7_9.md)
+- [Days 10–11: the React document and investigation interface](docs/DAYS_10_11.md)
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Users["Members and org admins"] -->|"/auth/login, /documents"| App["Application routes"]
+    Users["Members and org admins"] --> UI["React UI"]
+    UI -->|"/auth/login, /documents"| App["Application routes"]
     App --> Authz["Server-side authorization"]
     Authz -->|"server-derived events"| Validation["Validation and normalization"]
     Collector["Trusted collector"] -->|"POST /internal/events/batch"| API["Ingestion route"]
@@ -56,8 +62,12 @@ flowchart LR
     Runner --> Alerts[(alerts and alert_events)]
     Events --> Reads["GET /security/*"]
     Alerts --> Reads
-    Reads --> Analyst["Lab analyst"]
+    Reads --> AnalystUI["React alert views"]
+    AnalystUI --> Analyst["Lab analyst"]
 ```
+
+The React client is a thin view over the API. It hides irrelevant navigation per role,
+but every request carries the session token and FastAPI decides what it may return.
 
 PostgreSQL stores facts; the detector decides whether those facts are suspicious.
 Detection functions remain independent of HTTP and database code, so the same rule runs
@@ -70,13 +80,14 @@ from the file-based CLI and the database-backed runner.
 - FastAPI for the document application, trusted ingestion, and investigation reads
 - `pwdlib[argon2]` for password hashing; opaque database-backed sessions
 - pytest for behavioral tests
-- React and TypeScript for the planned document and investigation interfaces
+- React, TypeScript, React Router, and Vite for the document and investigation interface;
+  Vitest and Testing Library for its tests
 
 The local project remains runnable without Splunk or AWS.
 
 ## Run it
 
-Python 3.10 or newer and Docker are required.
+Python 3.10 or newer, Node.js 24 or newer, and Docker are required.
 
 ```bash
 python3 -m venv .venv
@@ -102,9 +113,19 @@ python -m scripts.run_detection                          # runs R1 and R2
 python -m scripts.run_detection   # second run: nothing created
 ```
 
+Run the UI (with the API running) and open http://127.0.0.1:5173:
+
+```bash
+cd frontend
+npm install
+npm run dev     # proxies /api to http://127.0.0.1:8000
+npm test        # frontend tests; the API is mocked
+```
+
 The [Days 7–9 walkthrough](docs/DAYS_7_9.md) shows how to log in as seeded users,
-trigger R1 and R2 through the real application routes, and follow each alert to its raw
-evidence as the lab analyst.
+trigger R1 and R2 through the real application routes with `curl`. The
+[Days 10–11 walkthrough](docs/DAYS_10_11.md) does the same through the browser and
+follows each alert to its raw evidence as the lab analyst.
 
 The file-only tools from Days 1–4 still work without a database:
 
@@ -118,9 +139,8 @@ migration, and seed steps.
 
 ## What is next
 
-Days 10–11 add a minimal React interface: login, document list/detail, and an analyst
-alert list/detail that follows alerts to their supporting events. Authorization continues
-to be enforced by the API.
+Days 12–14 prepare the v0.1 release: fix failing scenarios, clean setup and reset
+instructions, a short demo, and one written investigation.
 
 See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,
 and rule specifications. See [Project roadmap](security_project_roadmap.txt) for the
