@@ -388,6 +388,38 @@ def test_repeated_denied_documents_through_routes_produce_one_r2_episode(
     assert "Fictional" not in json.dumps(detail)
 
 
+def test_mistyped_password_below_threshold_does_not_produce_r1(
+    client: TestClient, login_as: LoginAs, database_url: str
+) -> None:
+    for _ in range(4):
+        client.post("/auth/login", json={"login": ALICE, "password": "guess"})
+    login_as(ALICE)
+
+    with connect(database_url) as conn:
+        result = run_failed_login_detection(conn)
+
+    analyst = login_as(ANALYST)
+    assert len(_events(database_url, "login_failed")) == 4
+    assert (result.alerts_detected, result.alerts_created) == (0, 0)
+    assert client.get("/security/alerts", headers=analyst).json() == []
+
+
+def test_repeated_denials_of_one_document_do_not_produce_r2(
+    client: TestClient, login_as: LoginAs, database_url: str
+) -> None:
+    bob = login_as(BOB)
+    for _ in range(5):
+        assert client.get("/documents/doc-alpha-001", headers=bob).status_code == 403
+
+    with connect(database_url) as conn:
+        result = run_denied_document_detection(conn)
+
+    analyst = login_as(ANALYST)
+    assert len(_events(database_url, "access_denied")) == 5
+    assert (result.alerts_detected, result.alerts_created) == (0, 0)
+    assert client.get("/security/alerts", headers=analyst).json() == []
+
+
 def _events(database_url: str, event_type: str | None = None) -> list[SecurityEvent]:
     with connect(database_url) as conn:
         events = load_events(conn)

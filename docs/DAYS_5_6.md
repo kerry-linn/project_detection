@@ -348,8 +348,9 @@ FROM detection_runs ORDER BY run_id;
 
 ## Limitations
 
-- Authentication is two static bearer tokens for a local lab: no users, rotation, expiry, or
-  per-caller identity. The application identity design is still required before Days 7–9.
+- At this stage authentication was two static bearer tokens with no users, rotation,
+  expiry, or per-caller identity. Days 7–9 replaced the analyst token with expiring,
+  revocable user sessions; the collector credential is still a static token.
 - Each request opens its own database connection; there is no connection pool.
 - `GET /security/events` has a bounded `limit` but no cursor pagination yet.
 - The detector rescans every stored event on each run. Incremental lookback, backfill, and

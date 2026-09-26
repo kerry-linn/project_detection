@@ -1,8 +1,8 @@
 # Technical Specification
 
 This document defines the project's security model, event contract, detections, and
-engineering rules. It is a design specification until the corresponding behavior is
-implemented and tested.
+engineering rules. Sections marked implemented describe v0.1 behavior verified by tests;
+everything else, including R3, R4, and the case workflow, is planned design.
 
 ## Application and threat model
 
@@ -15,7 +15,8 @@ and alert evidence.
 - **Member:** reads and updates documents they own.
 - **Organization administrator:** manages documents and membership only within their
   organization.
-- **Lab analyst:** reads global security events and alerts and manages investigations.
+- **Lab analyst:** reads global security events and alerts and their evidence. Alert
+  status changes, notes, and dispositions are planned for v1.0.
 - **Unauthenticated user:** may attempt authentication but has no application access.
 - **Trusted collector:** may submit fixture or external events through a separate,
   credential-protected ingestion path.
@@ -175,7 +176,8 @@ Database access uses parameterized SQL or an ORM.
 5. The detector reads validated events, records a `detection_runs` row, and writes
    deterministic alerts and evidence links.
 6. The investigation API returns events, alerts, and case data only to the lab analyst or
-   an explicitly scoped read-only collector.
+   an explicitly scoped read-only collector. v0.1 serves events and alerts to the analyst;
+   case data and the read-only collector are planned.
 7. A later export sends the same stored events to Splunk for manual SPL comparison.
 
 Ordinary clients may not assert actor identity, organization, source IP, or request outcome.
@@ -408,6 +410,10 @@ Days 10–11 add a React client over these routes and no new endpoints. The clie
 only the opaque session token and re-reads the profile from `GET /auth/me`; its role-aware
 navigation is a usability feature, and every boundary above is still enforced by the API.
 
+Days 12–14 add no routes. Suspicious and benign scenarios are generated through the
+routes above by `scripts.generate_scenarios`, and GitHub Actions runs the backend and
+frontend tests on every push and pull request.
+
 ## Engineering rules
 
 - Detection functions remain independent of HTTP and database code. The CLI and worker
@@ -436,8 +442,10 @@ has meaningful behavioral tests, and states its limitations.
 
 During implementation, `docs/` will gain only evidence-bearing artifacts:
 
-- A one-page threat model, started before event implementation and refined later
-- One v0.1 investigation of the suspicious login scenario
+- A one-page threat model; its current content lives in the application and threat
+  model section above
+- One v0.1 investigation of the suspicious login scenario: written, see
+  [investigations/R1_alice_failed_logins.md](investigations/R1_alice_failed_logins.md)
 - A benign alert investigation and one CloudTrail investigation for v1.0
 
 These should be concise records of observed behavior, not additional speculative manuals.
