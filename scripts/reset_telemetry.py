@@ -7,6 +7,7 @@ from backend.config import require_env
 from backend.db import Connection, connect
 
 TELEMETRY_TABLES = (
+    "alert_replacements",
     "alert_events",
     "alerts",
     "detection_runs",

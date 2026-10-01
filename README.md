@@ -31,6 +31,8 @@ handling, detection engineering, Python, SQL, APIs, and security investigation.
 - PostgreSQL storage with constraints, foreign keys, and SQL migrations
 - Trusted batch ingestion that stores replays once and rejects conflicting event IDs
 - Replay-safe alert storage: rerunning either detector never duplicates an alert
+- R2 late-event reconciliation: current alerts match full-history episodes while
+  superseded alerts retain their evidence and analyst status
 - Alert-to-event evidence links and a recorded history of detector runs
 - Three separate trust domains: application sessions, lab-analyst sessions, and a
   collector credential
@@ -208,7 +210,7 @@ python -m scripts.detect_r1 fixtures/days_1_2.jsonl
 | Replay a scenario from the same starting state | `python -m scripts.reset_telemetry --yes` |
 | Rebuild everything from nothing | `docker compose down -v`, then the Compose, both migrate, and seed steps above |
 
-`reset_telemetry` deletes events, alerts, evidence links, detector runs, and sessions from
+`reset_telemetry` deletes events, alerts, replacement links, evidence links, detector runs, and sessions from
 the `DATABASE_URL` database and keeps the seeded organizations, users, and documents.
 Without `--yes` it only names the target database. `docker compose down -v` deletes the
 PostgreSQL volume, including the test database. Neither requires editing PostgreSQL by
@@ -236,8 +238,8 @@ hand.
 ## What is next
 
 The current hardening plan is [the six-section timeline](MVP_Completion_Timeline.md).
-Section 1 establishes the baseline and runner recovery; section 2 addresses R2 late-event
-identity before incremental processing.
+Sections 1 and 2 cover runner recovery and R2 late-event reconciliation. Section 3
+addresses incremental processing.
 
 See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,
 and rule specifications. See [Project roadmap](security_project_roadmap.txt) for the

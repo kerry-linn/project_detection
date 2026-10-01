@@ -38,7 +38,11 @@ export function AlertTable({ alerts }: { alerts: AlertSummary[] }) {
                 {alert.match_count} / {alert.threshold}
               </td>
               <td>{alert.severity}</td>
-              <td>{alert.status}</td>
+              <td>
+                {alert.status}
+                {alert.detection_state === "superseded" && " · superseded"}
+                {alert.needs_review && " · needs review"}
+              </td>
               <td>{alert.reason}</td>
             </tr>
           ))}

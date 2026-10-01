@@ -40,10 +40,11 @@ def list_events(
 
 @router.get("/alerts", response_model=list[AlertSummary])
 def list_alerts(
+    include_superseded: bool = False,
     settings: Settings = Depends(get_settings),
 ) -> list[AlertSummary]:
     with connect(settings.database_url) as conn:
-        alerts = alert_repository.list_alerts(conn)
+        alerts = alert_repository.list_alerts(conn, include_superseded=include_superseded)
     return [AlertSummary(**asdict(alert)) for alert in alerts]
 
 
@@ -57,6 +58,7 @@ def get_alert(
         if alert is None:
             raise HTTPException(status_code=404, detail="alert not found")
         evidence = alert_repository.list_alert_evidence(conn, alert_key)
+        replaced_by, replaces = alert_repository.get_alert_replacements(conn, alert_key)
 
     source_ips = set()
     resource_ids = set()
@@ -75,4 +77,6 @@ def get_alert(
         source_ips=sorted(source_ips),
         resource_ids=sorted(resource_ids),
         evidence=evidence_records,
+        replaces=replaces,
+        replaced_by=replaced_by,
     )

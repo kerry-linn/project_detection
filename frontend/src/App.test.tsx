@@ -30,6 +30,8 @@ const R1_ALERT: AlertSummary = {
   rule_version: "1.0",
   severity: "medium",
   status: "new",
+  detection_state: "active",
+  needs_review: false,
   organization_id: "org-alpha",
   attempted_account: "alice@alpha.example.test",
   actor_id: "user-alice",
@@ -93,6 +95,8 @@ const R2_DETAIL: AlertDetail = {
     denial(3, "doc-alpha-005", "not_owner"),
     denial(4, "doc-beta-001", "cross_organization"),
   ],
+  replaces: [],
+  replaced_by: [],
 };
 
 type Reply = [status: number, body?: unknown];
@@ -201,6 +205,28 @@ describe("documents", () => {
 });
 
 describe("analyst investigation", () => {
+  it("shows superseded results only when history is requested", async () => {
+    const superseded = {
+      ...R2_ALERT,
+      alert_key: `${R2_ALERT.alert_key}-old`,
+      detection_state: "superseded" as const,
+    };
+    const fetchMock = mockApi({
+      "GET /api/auth/me": [200, ANALYST],
+      "GET /api/security/alerts": [200, [R2_ALERT]],
+      "GET /api/security/alerts?include_superseded=true": [200, [R2_ALERT, superseded]],
+    });
+    renderApp("/alerts", "tok-analyst");
+
+    expect(await screen.findByText("Showing 1 of 1 alerts")).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText("Include superseded alerts"));
+    expect(await screen.findByText("Showing 2 of 2 alerts")).toBeInTheDocument();
+    expect(screen.getByText("new · superseded")).toBeInTheDocument();
+    expect(authorizationOf(fetchMock, "/api/security/alerts?include_superseded=true")).toBe(
+      "Bearer tok-analyst",
+    );
+  });
+
   it("filters alerts by rule and by actor or account", async () => {
     mockApi({
       "GET /api/auth/me": [200, ANALYST],

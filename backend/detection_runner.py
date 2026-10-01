@@ -15,6 +15,7 @@ from backend.repositories.alerts import (
     AlertRecord,
     denied_document_alert_record,
     failed_login_alert_record,
+    reconcile_denied_document_alerts,
     save_alert,
 )
 from backend.repositories.detection_runs import (
@@ -173,10 +174,12 @@ def _detect_and_save(
     alerts = detect(events)
     progress.alerts_detected = len(alerts)
 
-    outcomes = {CREATED: 0, UPDATED: 0, UNCHANGED: 0}
-    for alert in alerts:
-        outcome = save_alert(conn, alert)
-        outcomes[outcome] += 1
+    if rule.rule_id == denied_document_access.RULE_ID:
+        outcomes = reconcile_denied_document_alerts(conn, alerts, rule)
+    else:
+        outcomes = {CREATED: 0, UPDATED: 0, UNCHANGED: 0}
+        for alert in alerts:
+            outcomes[save_alert(conn, alert)] += 1
 
     return DetectionRunSummary(
         run_id=run_id,

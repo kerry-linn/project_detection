@@ -10,18 +10,21 @@ import { useApi } from "../hooks/useApi";
 const FILTER_FIELDS = Object.keys(EMPTY_FILTERS) as (keyof AlertFilterValues)[];
 
 export function AlertsPage() {
-  const { data: alerts, error, loading } = useApi(listAlerts, "alerts");
   const [params, setParams] = useSearchParams();
+  const includeSuperseded = params.get("history") === "true";
+  const { data: alerts, error, loading } = useApi(
+    (token) => listAlerts(token, includeSuperseded),
+    `alerts:${includeSuperseded}`,
+  );
 
   const filters = Object.fromEntries(
     FILTER_FIELDS.map((field) => [field, params.get(field) ?? ""]),
   ) as unknown as AlertFilterValues;
 
   function updateFilters(values: AlertFilterValues) {
-    setParams(
-      Object.fromEntries(Object.entries(values).filter(([, value]) => value !== "")),
-      { replace: true },
-    );
+    const next = Object.fromEntries(Object.entries(values).filter(([, value]) => value !== ""));
+    if (includeSuperseded) next.history = "true";
+    setParams(next, { replace: true });
   }
 
   const visible = alerts ? filterAlerts(alerts, filters) : [];
@@ -29,6 +32,19 @@ export function AlertsPage() {
   return (
     <>
       <h1>Security alerts</h1>
+      <label>
+        <input
+          type="checkbox"
+          checked={includeSuperseded}
+          onChange={(event) => {
+            const next = new URLSearchParams(params);
+            if (event.target.checked) next.set("history", "true");
+            else next.delete("history");
+            setParams(next);
+          }}
+        />{" "}
+        Include superseded alerts
+      </label>
       {loading && <Loading />}
       {error && <ErrorNotice error={error} />}
       {alerts && (

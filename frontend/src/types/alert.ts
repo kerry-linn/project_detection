@@ -8,6 +8,8 @@ export interface AlertSummary {
   rule_version: string;
   severity: string;
   status: AlertStatus;
+  detection_state: "active" | "superseded";
+  needs_review: boolean;
   organization_id: string | null;
   attempted_account: string | null;
   actor_id: string | null;
@@ -28,4 +30,6 @@ export interface AlertDetail extends AlertSummary {
   source_ips: string[];
   resource_ids: string[];
   evidence: EvidenceEvent[];
+  replaces: string[];
+  replaced_by: string[];
 }

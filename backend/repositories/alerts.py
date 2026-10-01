@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
 from backend.db import Connection
+from backend.repositories.detection_runs import RuleRun
 from backend.repositories.events import SELECT_EVENT_COLUMNS
 from detections.denied_document_access import DeniedDocumentAccessAlert
 from detections.failed_login_success import FailedLoginSuccessAlert
@@ -18,8 +20,9 @@ SUCCESSFUL_LOGIN = "successful_login"
 DENIED_DOCUMENT_ACCESS = "denied_document_access"
 
 SELECT_ALERT_COLUMNS = """
-    alert_key, rule_id, rule_version, severity, status, organization_id,
-    attempted_account, actor_id, session_id, window_start, window_end,
+    alert_key, rule_id, rule_version, severity, status, detection_state,
+    needs_review, organization_id, attempted_account, actor_id, session_id,
+    window_start, window_end,
     threshold, window_microseconds, cooldown_microseconds, suppression_until,
     match_count, reason, created_at, updated_at
 """
@@ -90,6 +93,8 @@ class StoredAlert:
     rule_version: str
     severity: str
     status: str
+    detection_state: str
+    needs_review: bool
     organization_id: str | None
     attempted_account: str | None
     actor_id: str | None
@@ -110,6 +115,14 @@ class StoredAlert:
 class EvidenceEvent:
     evidence_role: str
     event: SecurityEvent
+
+
+@dataclass
+class _PriorEpisode:
+    organization_id: str
+    actor_id: str
+    status: str
+    evidence_ids: set[str]
 
 
 def failed_login_alert_record(alert: FailedLoginSuccessAlert) -> AlertRecord:
@@ -193,11 +206,15 @@ def save_alert(conn: Connection, alert: AlertRecord) -> str:
     return UPDATED
 
 
-def list_alerts(conn: Connection) -> list[StoredAlert]:
+def list_alerts(
+    conn: Connection, *, include_superseded: bool = False
+) -> list[StoredAlert]:
+    where = "" if include_superseded else "WHERE detection_state = 'active'"
     rows = conn.execute(
         f"""
         SELECT {SELECT_ALERT_COLUMNS}
         FROM alerts
+        {where}
         ORDER BY window_end DESC, alert_key
         """
     ).fetchall()
@@ -212,6 +229,102 @@ def get_alert(conn: Connection, alert_key: str) -> StoredAlert | None:
     if row is None:
         return None
     return StoredAlert(**row)
+
+
+def get_alert_replacements(
+    conn: Connection, alert_key: str
+) -> tuple[list[str], list[str]]:
+    replacements = conn.execute(
+        "SELECT new_alert_key FROM alert_replacements "
+        "WHERE old_alert_key = %s ORDER BY new_alert_key",
+        (alert_key,),
+    ).fetchall()
+    predecessors = conn.execute(
+        "SELECT old_alert_key FROM alert_replacements "
+        "WHERE new_alert_key = %s ORDER BY old_alert_key",
+        (alert_key,),
+    ).fetchall()
+    return (
+        [row["new_alert_key"] for row in replacements],
+        [row["old_alert_key"] for row in predecessors],
+    )
+
+
+def reconcile_denied_document_alerts(
+    conn: Connection, alerts: list[AlertRecord], rule: RuleRun
+) -> dict[str, int]:
+    rows = conn.execute(
+        """
+        SELECT a.alert_key, a.organization_id, a.actor_id, a.status, e.event_id
+        FROM alerts AS a
+        LEFT JOIN alert_events AS e ON e.alert_key = a.alert_key
+        WHERE a.rule_id = %s AND a.rule_version = %s
+          AND a.threshold = %s AND a.window_microseconds = %s
+          AND a.cooldown_microseconds = %s AND a.detection_state = 'active'
+        """,
+        (
+            rule.rule_id,
+            rule.rule_version,
+            rule.threshold,
+            rule.window_microseconds,
+            rule.cooldown_microseconds,
+        ),
+    ).fetchall()
+    previous: dict[str, _PriorEpisode] = {}
+    for row in rows:
+        episode = previous.setdefault(
+            row["alert_key"],
+            _PriorEpisode(
+                row["organization_id"], row["actor_id"], row["status"], set()
+            ),
+        )
+        if row["event_id"] is not None:
+            episode.evidence_ids.add(row["event_id"])
+
+    outcomes = {CREATED: 0, UPDATED: 0, UNCHANGED: 0}
+    current = {alert.alert_key: alert for alert in alerts}
+    current_by_evidence: dict[tuple[str | None, str | None, str], set[str]] = defaultdict(set)
+    for alert in alerts:
+        for event_id, _ in alert.evidence:
+            current_by_evidence[
+                (alert.organization_id, alert.actor_id, event_id)
+            ].add(alert.alert_key)
+        outcomes[save_alert(conn, alert)] += 1
+        conn.execute(
+            "UPDATE alerts SET detection_state = 'active', updated_at = now() "
+            "WHERE alert_key = %s AND detection_state = 'superseded'",
+            (alert.alert_key,),
+        )
+
+    for old_key, old in previous.items():
+        if old_key in current:
+            continue
+        replacements: set[str] = set()
+        for event_id in old.evidence_ids:
+            replacements.update(
+                current_by_evidence.get(
+                    (old.organization_id, old.actor_id, event_id), ()
+                )
+            )
+        if not replacements:
+            raise ValueError(f"no replacement for R2 alert {old_key}")
+        conn.execute(
+            "UPDATE alerts SET detection_state = 'superseded', updated_at = now() "
+            "WHERE alert_key = %s",
+            (old_key,),
+        )
+        for new_key in sorted(replacements):
+            conn.execute(
+                "INSERT INTO alert_replacements (old_alert_key, new_alert_key) "
+                "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (old_key, new_key),
+            )
+            if old.status == "closed":
+                conn.execute(
+                    "UPDATE alerts SET needs_review = TRUE WHERE alert_key = %s",
+                    (new_key,),
+                )
+    return outcomes
 
 
 def list_alert_evidence(conn: Connection, alert_key: str) -> list[EvidenceEvent]:

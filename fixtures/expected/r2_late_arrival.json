@@ -1,0 +1,16 @@
+{
+  "fixture": "fixtures/r2_late_arrival.jsonl",
+  "initial_event_ids": ["denial-0", "denial-1", "denial-2", "denial-3", "denial-4"],
+  "late_event_id": "denial-late",
+  "before": {
+    "active_trigger_event_ids": ["denial-4"],
+    "denial-4_evidence": ["denial-0", "denial-1", "denial-2", "denial-3", "denial-4"]
+  },
+  "after": {
+    "active_trigger_event_ids": ["denial-3"],
+    "denial-3_evidence": ["denial-late", "denial-0", "denial-1", "denial-2", "denial-3", "denial-4"],
+    "superseded_trigger_event_ids": ["denial-4"],
+    "replacement": {"denial-4": "denial-3"},
+    "denial-4_evidence_retained": ["denial-0", "denial-1", "denial-2", "denial-3", "denial-4"]
+  }
+}

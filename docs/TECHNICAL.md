@@ -174,6 +174,14 @@ the separate failure record contains available scan metrics and a safe category 
 than exception text. A lost database connection can leave the row `running` until a
 later worker recovers it.
 
+**Implemented in hardening section 2** ([`backend/migrations/004_r2_reconciliation.sql`](../backend/migrations/004_r2_reconciliation.sql)):
+`alerts.detection_state` distinguishes current results from superseded R2 results without
+changing analyst status. `alert_replacements` links historical results to their successors;
+`needs_review` flags a current result replacing a closed alert. R2 still evaluates all
+stored events. It saves canonical results, replacement links, and supersession in one
+transaction. The default alert list shows active results; analysts can request historical
+results and follow replacement links in the detail view.
+
 ## Pipeline and trust boundaries
 
 1. Normal application routes derive identity, organization, outcome, request ID, and source
@@ -304,9 +312,9 @@ instead of creating a second one.
   three are recorded, with the reason in `metadata.reason`.
 - **Benign causes:** stale links, old clients, bookmarks, or recently changed membership.
 - **Blind spots:** repeated attempts against one document, slow probing under five per
-  window, unauthenticated enumeration, identity changes, and missing denial telemetry. A
-  late denial that makes an earlier event the crossing produces a new key; the earlier
-  alert remains stored.
+  window, unauthenticated enumeration, identity changes, and missing denial telemetry.
+  A late denial can change the crossing key; full-history reconciliation supersedes the
+  previous result and retains its evidence and analyst status.
 - **ATT&CK:** no forced mapping; the event alone does not establish a specific technique.
 - **Tests:** below/at/above threshold, repeated same document, non-document denials,
   actor and organization isolation, both window boundaries, key anchoring, episode

@@ -27,11 +27,37 @@ export function AlertDetailPage() {
   const rule = ruleInfo(alert.rule_id);
   return (
     <>
-      <BackLink />
+      <BackLink includeHistory={alert.detection_state === "superseded"} />
       <h1>
         {rule.label} · {rule.title}
       </h1>
       <p className="reason">{alert.reason}</p>
+      {alert.detection_state === "superseded" && (
+        <p role="status">
+          This detection was superseded. Its evidence and analyst status remain available.
+        </p>
+      )}
+      {alert.needs_review && <p role="status">Prior case work needs review for this result.</p>}
+      {alert.replaced_by.length > 0 && (
+        <div>
+          <h2>Replaced by</h2>
+          <ul>
+            {alert.replaced_by.map((key) => (
+              <li key={key}><Link to={`/alerts/${encodeURIComponent(key)}`}>{key}</Link></li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {alert.replaces.length > 0 && (
+        <div>
+          <h2>Replaces</h2>
+          <ul>
+            {alert.replaces.map((key) => (
+              <li key={key}><Link to={`/alerts/${encodeURIComponent(key)}`}>{key}</Link></li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <dl className="facts">
         <dt>Rule</dt>
@@ -42,6 +68,8 @@ export function AlertDetailPage() {
         <dd>
           {alert.severity} / {alert.status}
         </dd>
+        <dt>Detection state</dt>
+        <dd>{alert.detection_state}</dd>
         <dt>Organization</dt>
         <dd className="mono">{alert.organization_id ?? "—"}</dd>
         {alert.attempted_account && (
@@ -106,10 +134,10 @@ export function AlertDetailPage() {
   );
 }
 
-function BackLink() {
+function BackLink({ includeHistory = false }: { includeHistory?: boolean }) {
   return (
     <p>
-      <Link to="/alerts">← All alerts</Link>
+      <Link to={includeHistory ? "/alerts?history=true" : "/alerts"}>← All alerts</Link>
     </p>
   );
 }

@@ -19,11 +19,11 @@ Based on MVP_Hardening_Roadmap • October 1, 2026
 
 **Reference:** H0–H1 • **Target:** Week 1
 
-- [ ] Run backend/frontend checks and reproduce suspicious and benign scenarios from a clean setup.
-- [ ] Confirm GitHub CI actually passes; record existing strengths and remaining gaps.
-- [ ] Test failures during alert/evidence writes and confirm complete rollback.
-- [ ] Test a killed runner, database failure, and two concurrent runners; make abandoned or failed runs visible.
-- [ ] Confirm reruns preserve existing evidence and analyst status without duplicate alerts.
+- [x] Run backend/frontend checks and reproduce suspicious and benign scenarios from a clean setup.
+- [x] Confirm GitHub CI actually passes; record existing strengths and remaining gaps.
+- [x] Test failures during alert/evidence writes and confirm complete rollback.
+- [x] Test a killed runner, database failure, and two concurrent runners; make abandoned or failed runs visible.
+- [x] Confirm reruns preserve existing evidence and analyst status without duplicate alerts.
 
 **Done when:** setup is repeatable, failures leave no partial results, and recovery behavior is documented.
 
@@ -33,10 +33,10 @@ Based on MVP_Hardening_Roadmap • October 1, 2026
 
 **Reference:** H2 • **Target:** Week 2
 
-- [ ] Reproduce the problem where a late denial changes the first threshold-crossing event and creates a different alert key.
-- [ ] Recompute complete affected histories and reconcile current results with stored alerts.
-- [ ] Mark replaced alerts as superseded and link their replacements; preserve evidence and any existing analyst history.
-- [ ] Test earlier threshold crossings, merged episodes, duplicate replay, and rollback during reconciliation.
+- [x] Reproduce the problem where a late denial changes the first threshold-crossing event and creates a different alert key.
+- [x] Recompute complete affected histories and reconcile current results with stored alerts.
+- [x] Mark replaced alerts as superseded and link their replacements; preserve evidence and any existing analyst history.
+- [x] Test earlier threshold crossings, merged episodes, duplicate replay, and rollback during reconciliation.
 
 **Done when:** the active alert set matches full-history detection, reruns remain stable, and older results remain inspectable.
 

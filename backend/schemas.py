@@ -129,6 +129,8 @@ class AlertSummary(BaseModel):
     rule_version: str
     severity: str
     status: str
+    detection_state: str
+    needs_review: bool
     organization_id: str | None
     attempted_account: str | None
     actor_id: str | None
@@ -149,3 +151,5 @@ class AlertDetail(AlertSummary):
     source_ips: list[str]
     resource_ids: list[str]
     evidence: list[dict[str, Any]]
+    replaces: list[str]
+    replaced_by: list[str]

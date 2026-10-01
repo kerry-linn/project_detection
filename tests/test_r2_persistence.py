@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import json
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg
+import pytest
+from fastapi.testclient import TestClient
 
+from backend.config import Settings
 from backend.db import connect
-from backend.detection_runner import run_denied_document_detection
+from backend.detection_runner import DetectionRunError, run_denied_document_detection
 from backend.repositories.alerts import get_alert, list_alerts
-from backend.repositories.events import ingest_events
-from detections.denied_document_access import RULE_ID
+from backend.repositories.events import ingest_events, load_events
+from detections.denied_document_access import RULE_ID, detect_repeated_denied_document_access
 from security_events import SecurityEvent, parse_event, parse_jsonl
 
 START = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
@@ -97,23 +102,258 @@ def test_run_records_rule_and_cooldown(database_url: str) -> None:
     assert run["cooldown_microseconds"] == 900_000_000
 
 
-def test_late_denial_changes_crossing_key_and_exposes_current_gap(database_url: str) -> None:
-    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "r2_late_arrival.jsonl"
+def test_late_denial_replaces_crossing_and_preserves_history(database_url: str) -> None:
+    fixtures = Path(__file__).resolve().parents[1] / "fixtures"
+    fixture = fixtures / "r2_late_arrival.jsonl"
+    expected = json.loads((fixtures / "expected" / "r2_late_arrival.json").read_text())
     events = list(parse_jsonl(fixture).events)
-    initial = [event for event in events if event.event_id != "denial-late"]
-    late = [event for event in events if event.event_id == "denial-late"]
+    initial = [event for event in events if event.event_id in expected["initial_event_ids"]]
+    late = [event for event in events if event.event_id == expected["late_event_id"]]
     _ingest(database_url, initial)
     assert _run(database_url).alerts_created == 1
+    old_key = FIRST_KEY
+    with connect(database_url) as conn:
+        assert [alert.alert_key.rsplit(":", 1)[-1] for alert in list_alerts(conn)] == expected[
+            "before"
+        ]["active_trigger_event_ids"]
+        assert {event_id for event_id, _ in _evidence(conn, old_key)} == set(
+            expected["before"]["denial-4_evidence"]
+        )
+        conn.execute("UPDATE alerts SET status = 'closed' WHERE alert_key = %s", (old_key,))
 
     _ingest(database_url, late)
     assert _run(database_url).alerts_created == 1
     with connect(database_url) as conn:
-        alerts = list_alerts(conn)
+        current = list_alerts(conn)
+        history = list_alerts(conn, include_superseded=True)
+        links = conn.execute("SELECT * FROM alert_replacements").fetchall()
+        old_evidence = _evidence(conn, old_key)
 
-    assert {alert.alert_key.rsplit(":", 1)[-1] for alert in alerts} == {
-        "denial-3", "denial-4"
+    assert [alert.alert_key.rsplit(":", 1)[-1] for alert in current] == expected[
+        "after"
+    ]["active_trigger_event_ids"]
+    assert len(history) == 2
+    new_key = current[0].alert_key
+    assert current[0].needs_review
+    assert next(alert for alert in history if alert.alert_key == old_key).status == "closed"
+    old_alert = next(alert for alert in history if alert.alert_key == old_key)
+    assert old_alert.detection_state == "superseded"
+    assert [(link["old_alert_key"], link["new_alert_key"]) for link in links] == [
+        (old_key, new_key)
+    ]
+    assert {event_id for event_id, _ in old_evidence} == set(
+        expected["after"]["denial-4_evidence_retained"]
+    )
+    with connect(database_url) as conn:
+        new_evidence = _evidence(conn, new_key)
+    assert {event_id for event_id, _ in new_evidence} == set(expected["after"]["denial-3_evidence"])
+    assert _run(database_url).alerts_unchanged == 1
+    with connect(database_url) as conn:
+        assert conn.execute("SELECT count(*) AS n FROM alert_replacements").fetchone()["n"] == 1
+        _assert_active_matches_full_history(conn)
+
+
+def test_late_evidence_extends_same_episode(database_url: str) -> None:
+    denials = _distinct_denials(5)
+    _ingest(database_url, denials)
+    _run(database_url)
+    _ingest(database_url, [_denial("late", START + timedelta(seconds=105), "doc-2")])
+
+    assert _run(database_url).alerts_updated == 1
+    with connect(database_url) as conn:
+        assert [alert.alert_key for alert in list_alerts(conn)] == [FIRST_KEY]
+        assert len(_evidence(conn, FIRST_KEY)) == 6
+        assert conn.execute("SELECT count(*) AS n FROM alert_replacements").fetchone()["n"] == 0
+
+
+def test_late_denial_merges_two_episodes(database_url: str) -> None:
+    first = _distinct_denials(5)
+    second = _distinct_denials(5, start=START + timedelta(minutes=18), prefix="second")
+    _ingest(database_url, [*first, *second])
+    assert _run(database_url).alerts_created == 2
+    second_key = FIRST_KEY.replace("denial-4", "second-4")
+    bridge = _denial("bridge", START + timedelta(minutes=10), "doc-bridge")
+    _ingest(database_url, [bridge])
+
+    _run(database_url)
+    with connect(database_url) as conn:
+        current = list_alerts(conn)
+        history = list_alerts(conn, include_superseded=True)
+        links = conn.execute(
+            "SELECT old_alert_key, new_alert_key FROM alert_replacements"
+        ).fetchall()
+
+    assert [alert.alert_key for alert in current] == [FIRST_KEY]
+    assert current[0].match_count == 6
+    with connect(database_url) as conn:
+        assert len(_evidence(conn, FIRST_KEY)) == 11
+    assert len(history) == 2
+    assert [(row["old_alert_key"], row["new_alert_key"]) for row in links] == [
+        (second_key, FIRST_KEY)
+    ]
+
+
+def test_multiple_superseded_episodes_link_to_one_result(database_url: str) -> None:
+    groups = [
+        _distinct_denials(5, start=START + timedelta(minutes=18 * index), prefix=f"part-{index}")
+        for index in range(3)
+    ]
+    _ingest(database_url, [event for group in groups for event in group])
+    assert _run(database_url).alerts_created == 3
+    bridges = [
+        _denial(
+            f"bridge-{index}",
+            START + timedelta(minutes=10 + 18 * index),
+            f"bridge-doc-{index}",
+        )
+        for index in range(2)
+    ]
+    _ingest(database_url, bridges)
+    _run(database_url)
+
+    first_key = FIRST_KEY.replace("denial-4", "part-0-4")
+    with connect(database_url) as conn:
+        assert [alert.alert_key for alert in list_alerts(conn)] == [first_key]
+        assert len(list_alerts(conn, include_superseded=True)) == 3
+        rows = conn.execute(
+            "SELECT old_alert_key, new_alert_key FROM alert_replacements"
+        ).fetchall()
+        _assert_active_matches_full_history(conn)
+    assert {(row["old_alert_key"], row["new_alert_key"]) for row in rows} == {
+        (FIRST_KEY.replace("denial-4", f"part-{index}-4"), first_key)
+        for index in (1, 2)
     }
-    assert len(alerts) == 2
+
+
+def test_duplicate_replay_keeps_reconciliation_stable(database_url: str) -> None:
+    denials = _distinct_denials(5)
+    _ingest(database_url, denials)
+    _run(database_url)
+    _ingest(database_url, denials)
+
+    assert _run(database_url).alerts_unchanged == 1
+    with connect(database_url) as conn:
+        assert [alert.alert_key for alert in list_alerts(conn)] == [FIRST_KEY]
+        assert conn.execute("SELECT count(*) AS n FROM alert_replacements").fetchone()["n"] == 0
+
+
+def test_historical_alerts_and_replacement_links_are_inspectable(
+    client: TestClient, login_as, settings: Settings,
+) -> None:
+    def payload(event: SecurityEvent) -> dict:
+        data = event.to_dict()
+        del data["ingested_at"]
+        data["source"] = "fixture"
+        return data
+
+    events = _distinct_denials(5)
+    collector_headers = {"Authorization": f"Bearer {settings.collector_token}"}
+    assert client.post(
+        "/internal/events/batch",
+        headers=collector_headers,
+        json={"events": [payload(event) for event in events]},
+    ).status_code == 200
+    with connect(settings.database_url) as conn:
+        run_denied_document_detection(conn)
+    late = _denial("late", START - timedelta(seconds=15), "doc-late")
+    assert client.post(
+        "/internal/events/batch",
+        headers=collector_headers,
+        json={"events": [payload(late)]},
+    ).status_code == 200
+    with connect(settings.database_url) as conn:
+        run_denied_document_detection(conn)
+
+    analyst = login_as("analyst@lab.example.test")
+    active = client.get("/security/alerts", headers=analyst).json()
+    history = client.get("/security/alerts?include_superseded=true", headers=analyst).json()
+    assert len(active) == 1
+    assert len(history) == 2
+    old = client.get(f"/security/alerts/{FIRST_KEY}", headers=analyst).json()
+    new = client.get(f"/security/alerts/{active[0]['alert_key']}", headers=analyst).json()
+    assert old["detection_state"] == "superseded"
+    assert old["replaced_by"] == [new["alert_key"]]
+    assert new["replaces"] == [FIRST_KEY]
+    assert len(old["evidence"]) == 5
+    assert len(new["evidence"]) == 6
+    assert client.get("/security/alerts?include_superseded=true").status_code == 401
+    assert client.get(
+        "/security/alerts?include_superseded=true",
+        headers=login_as("bob@alpha.example.test"),
+    ).status_code == 403
+    assert client.get(
+        "/security/alerts?include_superseded=true",
+        headers=collector_headers,
+    ).status_code == 401
+
+
+def test_reconciliation_does_not_touch_other_configuration(database_url: str) -> None:
+    from detections.denied_document_access import DeniedDocumentAccessConfig
+
+    _ingest(database_url, _distinct_denials(5))
+    _run(database_url)
+    with connect(database_url) as conn:
+        run_denied_document_detection(conn, DeniedDocumentAccessConfig(threshold=4))
+    _ingest(database_url, [_denial("late", START - timedelta(seconds=15), "doc-late")])
+    _run(database_url)
+
+    with connect(database_url) as conn:
+        current = list_alerts(conn)
+    assert len(current) == 2
+    assert {alert.threshold for alert in current} == {4, 5}
+
+
+def test_late_event_does_not_supersede_another_actor(database_url: str) -> None:
+    bob = _distinct_denials(5)
+    alice = [
+        replace(
+            event,
+            event_id=f"alice-{index}",
+            actor_id="user-alice",
+            request_id=f"request-alice-{index}",
+        )
+        for index, event in enumerate(bob)
+    ]
+    _ingest(database_url, [*bob, *alice])
+    assert _run(database_url).alerts_created == 2
+    _ingest(database_url, [_denial("late", START - timedelta(seconds=15), "doc-late")])
+    _run(database_url)
+
+    with connect(database_url) as conn:
+        current = list_alerts(conn)
+    assert len(current) == 2
+    alice_alert = next(alert for alert in current if alert.actor_id == "user-alice")
+    assert alice_alert.alert_key.endswith("alice-4")
+
+
+def test_reconciliation_rollback_preserves_old_result(database_url: str) -> None:
+    _ingest(database_url, _distinct_denials(5))
+    _run(database_url)
+    _ingest(database_url, [_denial("late", START - timedelta(seconds=15), "doc-late")])
+    with connect(database_url) as conn:
+        conn.execute("""
+            CREATE OR REPLACE FUNCTION fail_replacement() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'injected failure'; END $$
+        """)
+        conn.execute("""
+            CREATE TRIGGER fail_replacement BEFORE INSERT ON alert_replacements
+            FOR EACH ROW EXECUTE FUNCTION fail_replacement()
+        """)
+    try:
+        with connect(database_url) as conn:
+            with pytest.raises(DetectionRunError):
+                run_denied_document_detection(conn)
+    finally:
+        with connect(database_url) as conn:
+            conn.execute("DROP TRIGGER fail_replacement ON alert_replacements")
+            conn.execute("DROP FUNCTION fail_replacement()")
+
+    with connect(database_url) as conn:
+        assert [alert.alert_key for alert in list_alerts(conn)] == [FIRST_KEY]
+        assert len(list_alerts(conn, include_superseded=True)) == 1
+        assert len(_evidence(conn, FIRST_KEY)) == 5
+        assert conn.execute("SELECT count(*) AS n FROM alert_replacements").fetchone()["n"] == 0
+    assert _run(database_url).alerts_created == 1
 
 
 def _run(database_url: str):
@@ -132,6 +372,19 @@ def _evidence(conn: psycopg.Connection, alert_key: str) -> set[tuple[str, str]]:
         (alert_key,),
     ).fetchall()
     return {(row["event_id"], row["evidence_role"]) for row in rows}
+
+
+def _assert_active_matches_full_history(conn: psycopg.Connection) -> None:
+    expected = {
+        alert.alert_key: set(alert.evidence_event_ids)
+        for alert in detect_repeated_denied_document_access(load_events(conn))
+    }
+    actual = {
+        alert.alert_key: {event_id for event_id, _ in _evidence(conn, alert.alert_key)}
+        for alert in list_alerts(conn)
+        if alert.rule_id == RULE_ID and alert.threshold == 5
+    }
+    assert actual == expected
 
 
 def _distinct_denials(
