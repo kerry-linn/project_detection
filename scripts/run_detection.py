@@ -6,9 +6,13 @@ from dataclasses import asdict
 from datetime import timedelta
 from typing import Sequence
 
+import psycopg
+
 from backend.config import require_env
 from backend.db import connect
 from backend.detection_runner import (
+    DetectionRunError,
+    RunnerBusy,
     run_denied_document_detection,
     run_failed_login_detection,
 )
@@ -73,40 +77,55 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    summaries = []
-
-    with connect(require_env("DATABASE_URL")) as conn:
-        if args.rule in {"r1", "all"}:
-            summaries.append(
-                run_failed_login_detection(
-                    conn,
-                    FailedLoginSuccessConfig(
-                        threshold=args.threshold,
-                        window=timedelta(minutes=args.window_minutes),
-                    ),
-                )
-            )
-        if args.rule in {"r2", "all"}:
-            summaries.append(
-                run_denied_document_detection(
-                    conn,
-                    DeniedDocumentAccessConfig(
-                        threshold=args.r2_threshold,
-                        window=timedelta(minutes=args.r2_window_minutes),
-                        cooldown=timedelta(minutes=args.r2_cooldown_minutes),
-                    ),
-                )
-            )
+    selected = []
+    if args.rule in {"r1", "all"}:
+        selected.append((
+            failed_login_success.RULE_ID,
+            run_failed_login_detection,
+            FailedLoginSuccessConfig(
+                threshold=args.threshold,
+                window=timedelta(minutes=args.window_minutes),
+            ),
+        ))
+    if args.rule in {"r2", "all"}:
+        selected.append((
+            denied_document_access.RULE_ID,
+            run_denied_document_detection,
+            DeniedDocumentAccessConfig(
+                threshold=args.r2_threshold,
+                window=timedelta(minutes=args.r2_window_minutes),
+                cooldown=timedelta(minutes=args.r2_cooldown_minutes),
+            ),
+        ))
 
     reports = []
-    for summary in summaries:
-        report = asdict(summary)
-        for field in ["first_event_at", "last_event_at"]:
-            if report[field] is not None:
-                report[field] = format_utc(report[field])
+    for rule_id, run, config in selected:
+        try:
+            with connect(require_env("DATABASE_URL")) as conn:
+                summary = run(conn, config)
+            report = asdict(summary)
+            report["status"] = "succeeded"
+            for field in ("first_event_at", "last_event_at"):
+                if report[field] is not None:
+                    report[field] = format_utc(report[field])
+        except DetectionRunError as error:
+            report = {
+                "run_id": error.run_id,
+                "rule_id": rule_id,
+                "status": "failed",
+                "category": error.category,
+            }
+        except RunnerBusy:
+            report = {"rule_id": rule_id, "status": "busy"}
+        except psycopg.OperationalError:
+            report = {
+                "rule_id": rule_id,
+                "status": "failed",
+                "category": "database_unavailable",
+            }
         reports.append(report)
     print(json.dumps(reports, indent=2))
-    return 0
+    return 0 if all(report["status"] == "succeeded" for report in reports) else 1
 
 
 if __name__ == "__main__":

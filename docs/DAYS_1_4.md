@@ -83,10 +83,11 @@ Validation occurs in these layers:
 
 The event-specific requirements are:
 
-- `login_failed`: outcome is `failure`; organization and attempted account are required.
+- `login_failed`: outcome is `failure`; attempted account is required. Organization may
+  be null for an unknown account or the tenant-less lab analyst.
   Actor and session may be absent because authentication did not succeed.
-- `login_succeeded`: outcome is `success`; organization, attempted account, actor, and
-  session are required.
+- `login_succeeded`: outcome is `success`; attempted account, actor, and session are
+  required. Organization may be null for the tenant-less lab analyst.
 - `access_denied`: outcome is `denied`; organization, actor, session, and resource type
   are required. A document denial also requires a resource ID.
 - `document_downloaded`: outcome is `success`; actor and session are required, resource
@@ -189,7 +190,8 @@ Its logic is:
 
 1. Use `_deduplicate_and_sort` to collapse source-equivalent replays and order events by
    `(occurred_at, event_id)`.
-2. Ignore events without an organization or attempted account.
+2. Ignore events without an attempted account. Null organization is a distinct grouping
+   value for login events.
 3. Group login failures by `(organization_id, attempted_account)`.
 4. When a successful login occurs at time `t`, calculate `t - window`.
 5. Select failures for that entity in the interval `[t - window, t)`.

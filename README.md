@@ -49,6 +49,7 @@ Release evidence:
 - [Investigation: failed logins followed by success for Alice](docs/investigations/R1_alice_failed_logins.md)
 - [Demo recording script](docs/DEMO.md)
 - [Days 12–14: release hardening and reproducibility](docs/DAYS_12_14.md)
+- [Hardening section 1: baseline and recovery evidence](docs/hardening_baseline.md)
 
 Walkthroughs of the code and data flow:
 
@@ -170,6 +171,13 @@ python -m scripts.run_detection                     # rerun: created 0, unchange
 `doc-alpha-001`, `-002`, `-003`, `-005` (`403`) and `doc-beta-001` (`404`): five distinct
 denied documents. It then fails five logins for Alice and signs her in correctly.
 
+Each detector prints its own run ID, rule configuration, scanned range, event and alert
+counts, duration, and outcome. If one rule fails, the command reports the other rule's
+outcome separately and exits nonzero. A crashed worker may leave a `running` row; the next
+runner marks it `abandoned` after taking the exclusive runner lock. The persisted failure
+field contains a safe category, not exception text. See the
+[baseline and recovery report](docs/hardening_baseline.md) for test evidence.
+
 Sign in to the UI as `analyst@lab.example.test`, open **Alerts**, and follow each alert to
 its evidence. The script checks every HTTP status and stops at the first unexpected one.
 
@@ -227,8 +235,9 @@ hand.
 
 ## What is next
 
-v0.1 is finished once the demo is recorded. The next stage is the roadmap's Weeks 3–4:
-a paginated API client, Splunk searches, case workflow, and R3/R4.
+The current hardening plan is [the six-section timeline](MVP_Completion_Timeline.md).
+Section 1 establishes the baseline and runner recovery; section 2 addresses R2 late-event
+identity before incremental processing.
 
 See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,
 and rule specifications. See [Project roadmap](security_project_roadmap.txt) for the

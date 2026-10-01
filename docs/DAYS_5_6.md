@@ -1,8 +1,8 @@
 # Days 5–6 Implementation Walkthrough
 
-> **Superseded in Days 7–9:** the static `ANALYST_TOKEN` was replaced by a lab-analyst user
+> **Superseded in Days 7–9:** the static analyst token was replaced by a lab-analyst user
 > session from `POST /auth/login`, and `alerts.failure_count` became the rule-neutral
-> `match_count`. Use the analyst session token wherever this page shows `$ANALYST_TOKEN`.
+> `match_count`. Current analyst requests require a session token.
 > See the [Days 7–9 walkthrough](DAYS_7_9.md).
 
 Days 5–6 turn the batch scripts into a small security pipeline:
@@ -26,7 +26,7 @@ python -m scripts.run_detection
 alerts + alert_events         (alert_key is the primary key)
       |
       v
-GET /security/alerts, /security/alerts/{alert_key}, /security/events   (analyst token only)
+GET /security/alerts, /security/alerts/{alert_key}, /security/events   (analyst session only)
 ```
 
 The central rule: **PostgreSQL stores facts; the detector decides whether those facts are
@@ -48,7 +48,7 @@ SQL, so it stays testable without a database.
 | `backend/repositories/alerts.py` | Alert upsert, evidence links, alert reads, `JOIN` |
 | `backend/repositories/detection_runs.py` | Run audit records |
 | `backend/detection_runner.py` | Load events -> R1 -> save alerts, in transactions |
-| `backend/auth.py` | Collector and analyst bearer-token dependencies |
+| `backend/auth.py` | Collector token, user sessions, and role dependencies |
 | `backend/schemas.py` | Pydantic request and response models |
 | `backend/routes/ingestion.py` | `POST /internal/events/batch` |
 | `backend/routes/security.py` | `GET /security/...` analyst reads |
@@ -64,8 +64,9 @@ any Days 5–6 behavior was added.
 
 ```bash
 cp .env.example .env
-python -c "import secrets; print(secrets.token_urlsafe(32))"   # run twice; paste as tokens
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # set COLLECTOR_TOKEN
 # also replace the password in POSTGRES_PASSWORD, DATABASE_URL, and TEST_DATABASE_URL
+# set SEED_USER_PASSWORD before running scripts.seed or scripts.generate_scenarios
 
 docker compose up -d --wait
 python -m scripts.migrate
@@ -142,7 +143,7 @@ erDiagram
 The request pipeline:
 
 ```text
-authenticate (collector token)  -> 401 missing/unknown token, 403 analyst token
+authenticate (collector token)  -> 401 missing/unknown token or user session
 validate shape (Pydantic)       -> 422 unknown field, ingested_at supplied, wrong type,
                                    source=application, 0 or >500 events
 normalize (parse_event)         -> 422 with every invalid index and reason
@@ -189,18 +190,21 @@ f-strings. The only f-strings in the repositories insert fixed column lists or f
 
 ## Detection runner
 
-`python -m scripts.run_detection [--threshold N] [--window-minutes M]` calls
-`run_failed_login_detection`, which uses three separate transactions:
+`python -m scripts.run_detection` runs R1 and R2 separately. Each runner uses three
+transaction stages:
 
-1. Insert a `detection_runs` row with status `running` and commit.
+1. Acquire the session runner lock, mark any abandoned `running` rows, insert a new
+   `running` row, and commit.
 2. Lock `alerts` against concurrent runners, load all events in `(occurred_at, event_id)`
-   order, call `detect_failed_logins_followed_by_success`, save every alert, mark the run
+   order, call the selected pure detector, save every alert, mark the run
    `succeeded` with its counts, and commit.
 3. If step 2 raises, it rolls back completely, and a new transaction marks the run `failed`
-   with the error.
+   with a sanitized failure category.
 
 An alert and its evidence are therefore always written together or not at all, and a
-failed run is still visible in the audit table.
+failed run is still visible in the audit table when PostgreSQL remains available. A
+killed worker leaves `running` until the next worker takes the lock and marks it
+`abandoned`. A concurrent attempt exits `busy` and can be retried.
 
 `save_alert` returns one of three outcomes:
 
@@ -219,23 +223,24 @@ deterministic key, the primary key on `alert_key`, and the insert-or-compare log
 All `/security/*` routes share a router-level analyst dependency, so a new route cannot
 forget authentication.
 
-| Request | No token | Unknown token | Collector token | Analyst token |
+| Request | No token | Unknown token | Collector token | Analyst session |
 | --- | --- | --- | --- | --- |
-| `POST /internal/events/batch` | 401 | 401 | allowed | 403 |
-| `GET /security/*` | 401 | 401 | 403 | allowed |
+| `POST /internal/events/batch` | 401 | 401 | allowed | 401 |
+| `GET /security/*` | 401 | 401 | 401 | allowed |
 
-401 means the caller is not authenticated; 403 means the caller is known but not allowed.
-Testing the collector token against analyst routes proves least privilege, not merely that
-"some token exists." Tokens are compared with `secrets.compare_digest`, and the app refuses
-to start if either token is shorter than 16 characters or both tokens are equal.
+The collector token and user sessions are separate credential realms; crossing them
+returns `401`. A valid member or organization-admin session on `/security/*` returns
+`403`. The collector token is compared with `secrets.compare_digest` and must be at
+least 16 characters.
 
 ```bash
 set -a; source .env; set +a
+# Log in as analyst@lab.example.test and set ANALYST_SESSION_TOKEN to access_token.
 KEY='R1_FAILED_LOGINS_FOLLOWED_BY_SUCCESS:1.0:threshold=5:window_us=600000000:evt-009'
 
-curl -H "Authorization: Bearer $ANALYST_TOKEN" http://127.0.0.1:8000/security/alerts
-curl -H "Authorization: Bearer $ANALYST_TOKEN" "http://127.0.0.1:8000/security/alerts/$KEY"
-curl -H "Authorization: Bearer $ANALYST_TOKEN" \
+curl -H "Authorization: Bearer $ANALYST_SESSION_TOKEN" http://127.0.0.1:8000/security/alerts
+curl -H "Authorization: Bearer $ANALYST_SESSION_TOKEN" "http://127.0.0.1:8000/security/alerts/$KEY"
+curl -H "Authorization: Bearer $ANALYST_SESSION_TOKEN" \
   "http://127.0.0.1:8000/security/events?organization_id=org-alpha&attempted_account=alice@example.test&limit=20"
 ```
 

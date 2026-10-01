@@ -176,9 +176,9 @@ def test_detection_runs_record_successful_runs(database_url: str) -> None:
     with connect(database_url) as conn:
         ingest_events(conn, list(_fixture_events()))
     with connect(database_url) as conn:
-        run_failed_login_detection(conn)
+        first = run_failed_login_detection(conn)
     with connect(database_url) as conn:
-        run_failed_login_detection(conn)
+        second = run_failed_login_detection(conn)
 
     with connect(database_url) as conn:
         runs = conn.execute(
@@ -195,6 +195,8 @@ def test_detection_runs_record_successful_runs(database_url: str) -> None:
         2026, 9, 17, 12, 0, tzinfo=timezone.utc
     )
     assert runs[0]["finished_at"] >= runs[0]["started_at"]
+    assert runs[0]["duration_ms"] == first.duration_ms
+    assert runs[1]["duration_ms"] == second.duration_ms
 
 
 def test_failed_run_is_recorded_without_partial_alert_writes(
@@ -217,7 +219,7 @@ def test_failed_run_is_recorded_without_partial_alert_writes(
         assert _count(conn, "alerts") == 0
         assert _count(conn, "alert_events") == 0
     assert run["status"] == "failed"
-    assert "RuntimeError: simulated failure" in run["error"]
+    assert run["error"] == "detector_error"
 
 
 def test_evidence_join_returns_raw_events_in_time_order(

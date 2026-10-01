@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import psycopg
 
@@ -9,7 +10,7 @@ from backend.detection_runner import run_denied_document_detection
 from backend.repositories.alerts import get_alert, list_alerts
 from backend.repositories.events import ingest_events
 from detections.denied_document_access import RULE_ID
-from security_events import SecurityEvent, parse_event
+from security_events import SecurityEvent, parse_event, parse_jsonl
 
 START = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 FIRST_KEY = (
@@ -94,6 +95,25 @@ def test_run_records_rule_and_cooldown(database_url: str) -> None:
     assert run["threshold"] == 5
     assert run["window_microseconds"] == 300_000_000
     assert run["cooldown_microseconds"] == 900_000_000
+
+
+def test_late_denial_changes_crossing_key_and_exposes_current_gap(database_url: str) -> None:
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "r2_late_arrival.jsonl"
+    events = list(parse_jsonl(fixture).events)
+    initial = [event for event in events if event.event_id != "denial-late"]
+    late = [event for event in events if event.event_id == "denial-late"]
+    _ingest(database_url, initial)
+    assert _run(database_url).alerts_created == 1
+
+    _ingest(database_url, late)
+    assert _run(database_url).alerts_created == 1
+    with connect(database_url) as conn:
+        alerts = list_alerts(conn)
+
+    assert {alert.alert_key.rsplit(":", 1)[-1] for alert in alerts} == {
+        "denial-3", "denial-4"
+    }
+    assert len(alerts) == 2
 
 
 def _run(database_url: str):

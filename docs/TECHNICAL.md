@@ -147,7 +147,7 @@ Database access uses parameterized SQL or an ORM.
   `evidence_role`, and foreign keys to both tables, so evidence cannot reference a missing
   event.
 - `detection_runs` records rule version, configuration, timing, status, scanned event-time
-  range, alert outcome counts, and a failure message.
+  range, alert outcome counts, and a sanitized failure category.
 - `case_notes` and disposition fields remain planned.
 
 **Implemented in Days 7–9** ([`backend/migrations/002_application.sql`](../backend/migrations/002_application.sql)):
@@ -164,6 +164,15 @@ Database access uses parameterized SQL or an ORM.
   organization are nullable (an alert needs an account or an actor), and R2 adds
   `cooldown_microseconds` and `suppression_until`. `alert_events` gains the
   `denied_document_access` evidence role.
+
+**Implemented in hardening section 1** ([`backend/migrations/003_run_recovery.sql`](../backend/migrations/003_run_recovery.sql)):
+`detection_runs` records `abandoned` after a crashed worker is confirmed inactive and
+stores run duration. A session advisory lock serializes detector entry, while the existing
+`alerts` table lock remains during evaluation. The next worker takes the advisory lock
+before marking an old `running` row abandoned. Failed detector writes roll back together;
+the separate failure record contains available scan metrics and a safe category rather
+than exception text. A lost database connection can leave the row `running` until a
+later worker recovers it.
 
 ## Pipeline and trust boundaries
 
@@ -225,7 +234,7 @@ choices, not validated industry defaults.
 
 - **Hypothesis:** repeated failures followed by a successful login may indicate account
   compromise.
-- **Required fields:** event type, organization, canonical attempted account, outcome,
+- **Required fields:** event type, nullable organization, canonical attempted account, outcome,
   event time, event ID; source IP is retained when present.
 - **Grouping:** organization and canonical account.
 - **Window:** for each success at time `t`, examine failures in `[t-10m, t)`.
@@ -370,7 +379,7 @@ with identical source content is counted as a replay and not stored twice; the f
 batch with `409 Conflict`, because the authoritative evidence would otherwise depend on
 arrival order.
 
-Incremental processing re-evaluates a configurable overlapping lookback. Unique event IDs,
+Planned incremental processing re-evaluates a configurable overlapping lookback. Unique event IDs,
 deterministic alert identities, and evidence-link constraints prevent duplicates. Events
 older than the late-event allowance require an explicit backfill command. The project does
 not claim unlimited late-event support or exactly-once streaming.
