@@ -13,12 +13,12 @@ export function EmptyState({ children }: { children: string }) {
 }
 
 export function ErrorNotice({ error }: { error: ApiError }) {
-  const heading =
-    error.status === 403
-      ? "Not authorized"
-      : error.status === 404
-        ? "Not found"
-        : "Something went wrong";
+  let heading = "Something went wrong";
+  if (error.status === 403) {
+    heading = "Not authorized";
+  } else if (error.status === 404) {
+    heading = "Not found";
+  }
   return (
     <div className="notice notice-error" role="alert">
       <strong>{heading}</strong>

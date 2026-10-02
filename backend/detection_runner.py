@@ -98,21 +98,23 @@ def run_denied_document_detection(
 def _run_detection(
     conn: Connection, rule: RuleRun, detect: Detector
 ) -> DetectionRunSummary:
-    """`conn` must have no open transaction. The run record, the detection work,
-    and a failure record each commit separately, so a failed run is still
-    visible in detection_runs while none of its partial alert writes are.
+    """`conn` must have no open transaction.
+
+    The session advisory lock spans the separately committed run record and
+    detection work. A failed work transaction rolls back before its failure
+    record is committed. The lock is released only after that recovery attempt.
     """
     with conn.transaction():
-        locked = conn.execute(
+        lock_acquired = conn.execute(
             "SELECT pg_try_advisory_lock(%s) AS locked", (RUNNER_LOCK_KEY,)
         ).fetchone()["locked"]
-    if not locked:
+    if not lock_acquired:
         raise RunnerBusy("another detector is running")
     try:
         with conn.transaction():
-            abandoned = abandon_running_runs(conn)
+            abandoned_run_ids = abandon_running_runs(conn)
             run_id = start_run(conn, rule)
-        for abandoned_id in abandoned:
+        for abandoned_id in abandoned_run_ids:
             logger.warning(
                 json.dumps({"event": "detection_run_abandoned", "run_id": abandoned_id})
             )
@@ -121,32 +123,49 @@ def _run_detection(
         try:
             with conn.transaction():
                 summary = _detect_and_save(conn, run_id, rule, detect, progress)
-                summary = replace(summary, duration_ms=finish_run(conn, summary))
+                duration_ms = finish_run(conn, summary)
+                summary = replace(summary, duration_ms=duration_ms)
         except Exception as error:
             category = _failure_category(error)
-            try:
-                with conn.transaction():
-                    fail_run(conn, run_id, category, progress)
-            except psycopg.Error:
-                logger.error(
-                    json.dumps(
-                        {
-                            "event": "detection_failure_record_unavailable",
-                            "run_id": run_id,
-                            "rule_id": rule.rule_id,
-                            "category": category,
-                        }
-                    )
-                )
+            _record_failed_run(conn, run_id, rule.rule_id, category, progress)
             raise DetectionRunError(run_id, rule.rule_id, category) from None
         return summary
     finally:
-        try:
-            if not conn.closed:
-                with conn.transaction():
-                    conn.execute("SELECT pg_advisory_unlock(%s)", (RUNNER_LOCK_KEY,))
-        except psycopg.Error:
-            logger.error(json.dumps({"event": "detection_lock_release_unavailable"}))
+        _release_runner_lock(conn)
+
+
+def _record_failed_run(
+    conn: Connection,
+    run_id: int,
+    rule_id: str,
+    category: str,
+    progress: DetectionRunProgress,
+) -> None:
+    """Commit the failure after the detection transaction has rolled back."""
+    try:
+        with conn.transaction():
+            fail_run(conn, run_id, category, progress)
+    except psycopg.Error:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "detection_failure_record_unavailable",
+                    "run_id": run_id,
+                    "rule_id": rule_id,
+                    "category": category,
+                }
+            )
+        )
+
+
+def _release_runner_lock(conn: Connection) -> None:
+    try:
+        if conn.closed:
+            return
+        with conn.transaction():
+            conn.execute("SELECT pg_advisory_unlock(%s)", (RUNNER_LOCK_KEY,))
+    except psycopg.Error:
+        logger.error(json.dumps({"event": "detection_lock_release_unavailable"}))
 
 
 def _failure_category(error: Exception) -> str:
@@ -179,7 +198,8 @@ def _detect_and_save(
     else:
         outcomes = {CREATED: 0, UPDATED: 0, UNCHANGED: 0}
         for alert in alerts:
-            outcomes[save_alert(conn, alert)] += 1
+            outcome = save_alert(conn, alert)
+            outcomes[outcome] += 1
 
     return DetectionRunSummary(
         run_id=run_id,

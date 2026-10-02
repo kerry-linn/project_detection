@@ -245,6 +245,39 @@ describe("analyst investigation", () => {
     expect(screen.getByText("alice@alpha.example.test")).toBeInTheDocument();
   });
 
+  it("restores URL filters and preserves history when filters are cleared", async () => {
+    mockApi({
+      "GET /api/auth/me": [200, ANALYST],
+      "GET /api/security/alerts": [200, [R1_ALERT, R2_ALERT]],
+      "GET /api/security/alerts?include_superseded=true": [200, [R1_ALERT, R2_ALERT]],
+    });
+    renderApp(
+      `/alerts?history=true&rule=${R2_ALERT.rule_id}&status=new&organization=org-alpha&entity=BOB`,
+      "tok-analyst",
+    );
+
+    await screen.findByText("Showing 1 of 2 alerts");
+    expect(screen.getByLabelText("Rule")).toHaveValue(R2_ALERT.rule_id);
+    expect(screen.getByLabelText("Status")).toHaveValue("new");
+    expect(screen.getByLabelText("Organization")).toHaveValue("org-alpha");
+    expect(screen.getByLabelText("Actor or account")).toHaveValue("BOB");
+
+    await userEvent.click(screen.getByLabelText("Include superseded alerts"));
+    await screen.findByText("Showing 1 of 2 alerts");
+    expect(screen.getByLabelText("Rule")).toHaveValue(R2_ALERT.rule_id);
+    expect(screen.getByLabelText("Actor or account")).toHaveValue("BOB");
+
+    await userEvent.click(screen.getByLabelText("Include superseded alerts"));
+    await screen.findByText("Showing 1 of 2 alerts");
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByText("Showing 2 of 2 alerts")).toBeInTheDocument();
+    expect(screen.getByLabelText("Include superseded alerts")).toBeChecked();
+    expect(screen.getByLabelText("Rule")).toHaveValue("");
+    expect(screen.getByLabelText("Status")).toHaveValue("");
+    expect(screen.getByLabelText("Organization")).toHaveValue("");
+    expect(screen.getByLabelText("Actor or account")).toHaveValue("");
+  });
+
   it("follows an alert to its reason and time-ordered raw evidence", async () => {
     mockApi({
       "GET /api/auth/me": [200, ANALYST],

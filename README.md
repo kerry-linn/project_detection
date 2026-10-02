@@ -55,6 +55,7 @@ Release evidence:
 
 Walkthroughs of the code and data flow:
 
+- [Current code map, readability review, and study walkthrough](docs/CODEBASE_WALKTHROUGH.md)
 - [Days 1–4: parsing and the R1 detection](docs/DAYS_1_4.md)
 - [Days 5–6: PostgreSQL, persistence, and APIs](docs/DAYS_5_6.md)
 - [Days 7–9: authentication, documents, application events, and R2](docs/DAYS_7_9.md)

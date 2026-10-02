@@ -22,7 +22,9 @@ export function useApi<T>(load: (token: string) => Promise<T>, key: string): Api
     let active = true;
     setState({ data: null, error: null, loading: true });
     load(token).then(
-      (data) => active && setState({ data, error: null, loading: false }),
+      (data) => {
+        if (active) setState({ data, error: null, loading: false });
+      },
       (error: unknown) => {
         if (!active) return;
         const apiError =

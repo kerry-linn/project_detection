@@ -1,13 +1,11 @@
 import { useSearchParams } from "react-router";
 
 import { listAlerts } from "../api/security";
-import { AlertFilters, EMPTY_FILTERS, filterAlerts } from "../components/AlertFilters";
+import { AlertFilters, filterAlerts } from "../components/AlertFilters";
 import type { AlertFilterValues } from "../components/AlertFilters";
 import { AlertTable } from "../components/AlertTable";
 import { EmptyState, ErrorNotice, Loading } from "../components/StatusMessage";
 import { useApi } from "../hooks/useApi";
-
-const FILTER_FIELDS = Object.keys(EMPTY_FILTERS) as (keyof AlertFilterValues)[];
 
 export function AlertsPage() {
   const [params, setParams] = useSearchParams();
@@ -17,12 +15,18 @@ export function AlertsPage() {
     `alerts:${includeSuperseded}`,
   );
 
-  const filters = Object.fromEntries(
-    FILTER_FIELDS.map((field) => [field, params.get(field) ?? ""]),
-  ) as unknown as AlertFilterValues;
+  const filters: AlertFilterValues = {
+    rule: params.get("rule") ?? "",
+    status: params.get("status") ?? "",
+    entity: params.get("entity") ?? "",
+    organization: params.get("organization") ?? "",
+  };
 
   function updateFilters(values: AlertFilterValues) {
-    const next = Object.fromEntries(Object.entries(values).filter(([, value]) => value !== ""));
+    const next: Record<string, string> = {};
+    for (const [field, value] of Object.entries(values)) {
+      if (value !== "") next[field] = value;
+    }
     if (includeSuperseded) next.history = "true";
     setParams(next, { replace: true });
   }
@@ -38,8 +42,11 @@ export function AlertsPage() {
           checked={includeSuperseded}
           onChange={(event) => {
             const next = new URLSearchParams(params);
-            if (event.target.checked) next.set("history", "true");
-            else next.delete("history");
+            if (event.target.checked) {
+              next.set("history", "true");
+            } else {
+              next.delete("history");
+            }
             setParams(next);
           }}
         />{" "}

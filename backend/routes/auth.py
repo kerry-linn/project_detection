@@ -34,25 +34,25 @@ def login(
     request: Request,
     settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
-    account = canonical_login(body.login)
+    canonical_account = canonical_login(body.login)
     context = request_context(request)
 
     with connect(settings.database_url) as conn:
-        user = get_user_by_login(conn, account)
+        user = get_user_by_login(conn, canonical_account)
         password_hash = user.password_hash if user else None
-        if not verify_password(body.password, password_hash):
+        password_matches = verify_password(body.password, password_hash)
+        if not password_matches:
             record_event(
                 conn,
                 context,
                 event_type="login_failed",
                 outcome="failure",
                 organization_id=user.organization_id if user else None,
-                attempted_account=account,
+                attempted_account=canonical_account,
                 metadata={
                     "reason": "invalid_password" if user else "unknown_account"
                 },
             )
-            user = None
         else:
             token, token_hash = new_session_token()
             session_id = f"sess-{uuid.uuid4()}"
@@ -73,11 +73,12 @@ def login(
                 outcome="success",
                 organization_id=user.organization_id,
                 actor_id=user.user_id,
-                attempted_account=account,
+                attempted_account=canonical_account,
                 session_id=session_id,
             )
 
-    if user is None:
+    # Raise after the connection commits so failed-login telemetry is retained.
+    if not password_matches:
         raise HTTPException(
             status_code=401,
             detail=INVALID_LOGIN,

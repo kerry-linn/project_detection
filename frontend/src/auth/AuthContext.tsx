@@ -42,7 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authApi
       .getCurrentUser(token)
       .then(
-        (profile) => active && setUser(profile),
+        (profile) => {
+          if (active) setUser(profile);
+        },
         (error: unknown) => {
           if (!active) return;
           const expired = error instanceof ApiError && error.status === 401;
@@ -51,7 +53,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
         },
       )
-      .finally(() => active && setRestoring(false));
+      .finally(() => {
+        if (active) setRestoring(false);
+      });
     return () => {
       active = false;
     };

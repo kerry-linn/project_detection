@@ -14,16 +14,17 @@ const STATUSES = ["new", "investigating", "closed"];
 
 export function filterAlerts(alerts: AlertSummary[], filters: AlertFilterValues): AlertSummary[] {
   const entity = filters.entity.trim().toLowerCase();
-  return alerts.filter(
-    (alert) =>
-      (!filters.rule || alert.rule_id === filters.rule) &&
-      (!filters.status || alert.status === filters.status) &&
-      (!filters.organization || alert.organization_id === filters.organization) &&
-      (!entity ||
-        [alert.attempted_account, alert.actor_id].some((value) =>
-          value?.toLowerCase().includes(entity),
-        )),
-  );
+  return alerts.filter((alert) => {
+    if (filters.rule && alert.rule_id !== filters.rule) return false;
+    if (filters.status && alert.status !== filters.status) return false;
+    if (filters.organization && alert.organization_id !== filters.organization) return false;
+    if (entity) {
+      return [alert.attempted_account, alert.actor_id].some((value) =>
+        value?.toLowerCase().includes(entity),
+      );
+    }
+    return true;
+  });
 }
 
 interface Props {

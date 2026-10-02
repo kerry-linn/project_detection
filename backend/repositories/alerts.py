@@ -253,6 +253,44 @@ def get_alert_replacements(
 def reconcile_denied_document_alerts(
     conn: Connection, alerts: list[AlertRecord], rule: RuleRun
 ) -> dict[str, int]:
+    """Reconcile a full evaluation under the caller's transaction and alert lock.
+
+    Snapshot prior evidence before saving current results. Supersession and
+    replacement links must commit with those results or roll back together.
+    """
+    prior_episodes = _load_active_episodes(conn, rule)
+    current_alert_keys = {alert.alert_key for alert in alerts}
+    alerts_by_evidence: dict[
+        tuple[str | None, str | None, str], set[str]
+    ] = defaultdict(set)
+    outcomes = {CREATED: 0, UPDATED: 0, UNCHANGED: 0}
+
+    for alert in alerts:
+        for event_id, _ in alert.evidence:
+            evidence_identity = (alert.organization_id, alert.actor_id, event_id)
+            alerts_by_evidence[evidence_identity].add(alert.alert_key)
+
+        outcome = save_alert(conn, alert)
+        outcomes[outcome] += 1
+        conn.execute(
+            "UPDATE alerts SET detection_state = 'active', updated_at = now() "
+            "WHERE alert_key = %s AND detection_state = 'superseded'",
+            (alert.alert_key,),
+        )
+
+    for prior_key, prior_episode in prior_episodes.items():
+        if prior_key in current_alert_keys:
+            continue
+        replacement_keys = _find_replacement_keys(prior_episode, alerts_by_evidence)
+        if not replacement_keys:
+            raise ValueError(f"no replacement for R2 alert {prior_key}")
+        _supersede_alert(
+            conn, prior_key, replacement_keys, needs_review=prior_episode.status == "closed"
+        )
+    return outcomes
+
+
+def _load_active_episodes(conn: Connection, rule: RuleRun) -> dict[str, _PriorEpisode]:
     rows = conn.execute(
         """
         SELECT a.alert_key, a.organization_id, a.actor_id, a.status, e.event_id
@@ -270,61 +308,57 @@ def reconcile_denied_document_alerts(
             rule.cooldown_microseconds,
         ),
     ).fetchall()
-    previous: dict[str, _PriorEpisode] = {}
+    episodes: dict[str, _PriorEpisode] = {}
     for row in rows:
-        episode = previous.setdefault(
-            row["alert_key"],
-            _PriorEpisode(
-                row["organization_id"], row["actor_id"], row["status"], set()
-            ),
-        )
+        alert_key = row["alert_key"]
+        if alert_key not in episodes:
+            episodes[alert_key] = _PriorEpisode(
+                organization_id=row["organization_id"],
+                actor_id=row["actor_id"],
+                status=row["status"],
+                evidence_ids=set(),
+            )
         if row["event_id"] is not None:
-            episode.evidence_ids.add(row["event_id"])
+            episodes[alert_key].evidence_ids.add(row["event_id"])
+    return episodes
 
-    outcomes = {CREATED: 0, UPDATED: 0, UNCHANGED: 0}
-    current = {alert.alert_key: alert for alert in alerts}
-    current_by_evidence: dict[tuple[str | None, str | None, str], set[str]] = defaultdict(set)
-    for alert in alerts:
-        for event_id, _ in alert.evidence:
-            current_by_evidence[
-                (alert.organization_id, alert.actor_id, event_id)
-            ].add(alert.alert_key)
-        outcomes[save_alert(conn, alert)] += 1
-        conn.execute(
-            "UPDATE alerts SET detection_state = 'active', updated_at = now() "
-            "WHERE alert_key = %s AND detection_state = 'superseded'",
-            (alert.alert_key,),
-        )
 
-    for old_key, old in previous.items():
-        if old_key in current:
-            continue
-        replacements: set[str] = set()
-        for event_id in old.evidence_ids:
-            replacements.update(
-                current_by_evidence.get(
-                    (old.organization_id, old.actor_id, event_id), ()
-                )
-            )
-        if not replacements:
-            raise ValueError(f"no replacement for R2 alert {old_key}")
+def _find_replacement_keys(
+    episode: _PriorEpisode,
+    alerts_by_evidence: dict[tuple[str | None, str | None, str], set[str]],
+) -> set[str]:
+    replacement_keys: set[str] = set()
+    for event_id in episode.evidence_ids:
+        evidence_identity = (episode.organization_id, episode.actor_id, event_id)
+        matching_keys = alerts_by_evidence.get(evidence_identity)
+        if matching_keys is not None:
+            replacement_keys.update(matching_keys)
+    return replacement_keys
+
+
+def _supersede_alert(
+    conn: Connection,
+    prior_key: str,
+    replacement_keys: set[str],
+    *,
+    needs_review: bool,
+) -> None:
+    conn.execute(
+        "UPDATE alerts SET detection_state = 'superseded', updated_at = now() "
+        "WHERE alert_key = %s",
+        (prior_key,),
+    )
+    for replacement_key in sorted(replacement_keys):
         conn.execute(
-            "UPDATE alerts SET detection_state = 'superseded', updated_at = now() "
-            "WHERE alert_key = %s",
-            (old_key,),
+            "INSERT INTO alert_replacements (old_alert_key, new_alert_key) "
+            "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (prior_key, replacement_key),
         )
-        for new_key in sorted(replacements):
+        if needs_review:
             conn.execute(
-                "INSERT INTO alert_replacements (old_alert_key, new_alert_key) "
-                "VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                (old_key, new_key),
+                "UPDATE alerts SET needs_review = TRUE WHERE alert_key = %s",
+                (replacement_key,),
             )
-            if old.status == "closed":
-                conn.execute(
-                    "UPDATE alerts SET needs_review = TRUE WHERE alert_key = %s",
-                    (new_key,),
-                )
-    return outcomes
 
 
 def list_alert_evidence(conn: Connection, alert_key: str) -> list[EvidenceEvent]:

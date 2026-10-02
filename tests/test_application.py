@@ -423,4 +423,6 @@ def test_repeated_denials_of_one_document_do_not_produce_r2(
 def _events(database_url: str, event_type: str | None = None) -> list[SecurityEvent]:
     with connect(database_url) as conn:
         events = load_events(conn)
-    return [event for event in events if event_type in (None, event.event_type)]
+    if event_type is None:
+        return events
+    return [event for event in events if event.event_type == event_type]

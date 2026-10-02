@@ -29,10 +29,11 @@ SUCCESS_TIME = datetime(2026, 9, 17, 13, 0, tzinfo=timezone.utc)
 def test_threshold_below_at_and_above(
     failure_count: int, expected_alerts: int
 ) -> None:
+    first_failure_at = SUCCESS_TIME - timedelta(minutes=9)
     failures = [
         _login_event(
             f"failure-{index}",
-            SUCCESS_TIME - timedelta(minutes=9, seconds=-index),
+            first_failure_at + timedelta(seconds=index),
             "login_failed",
         )
         for index in range(failure_count)
@@ -340,19 +341,11 @@ def test_parser_excludes_conflicts_before_detection(
     assert alerts == ()
 
 
-@pytest.mark.parametrize(
-    "config",
-    [
-        FailedLoginSuccessConfig,
-    ],
-)
-def test_invalid_configuration_is_rejected(
-    config: type[FailedLoginSuccessConfig],
-) -> None:
+def test_invalid_configuration_is_rejected() -> None:
     with pytest.raises(ValueError, match="threshold must be at least 1"):
-        config(threshold=0)
+        FailedLoginSuccessConfig(threshold=0)
     with pytest.raises(ValueError, match="window must be greater than zero"):
-        config(window=timedelta(0))
+        FailedLoginSuccessConfig(window=timedelta(0))
 
 
 def test_days_1_2_fixture_produces_hand_checked_alert() -> None:
