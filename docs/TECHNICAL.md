@@ -184,6 +184,14 @@ results and follow replacement links in the detail view.
 
 ## Pipeline and trust boundaries
 
+**Implemented in hardening section 3:** migrations 005–006 add a scoped R1
+checkpoint, insertion-transaction visibility tracking, run processing metrics, and
+a measured visibility index. SQL loads only rule-eligible events. R1 offers full
+and incremental processing; R2 retains complete document-denial histories. The
+work transaction uses REPEATABLE READ, and checkpoint progress commits with
+alerts, evidence, and run success. See the [Section 3 policy](hardening_section3.md)
+for benchmark evidence, exact ranges, and recovery tests.
+
 1. Normal application routes derive identity, organization, outcome, request ID, and source
    details from server-controlled state.
 2. Successful business changes and their audit events are committed in one transaction.
@@ -387,10 +395,15 @@ with identical source content is counted as a replay and not stored twice; the f
 batch with `409 Conflict`, because the authoritative evidence would otherwise depend on
 arrival order.
 
-Planned incremental processing re-evaluates a configurable overlapping lookback. Unique event IDs,
-deterministic alert identities, and evidence-link constraints prevent duplicates. Events
-older than the late-event allowance require an explicit backfill command. The project does
-not claim unlimited late-event support or exactly-once streaming.
+Implemented in Section 3, optional incremental R1 re-evaluates successes in
+`[C-L, U]`, with failure context from `C-L-W`. C is the prior successful checkpoint;
+U is fixed database time; L defaults to fifteen minutes and W to ten minutes.
+Full mode explicitly initializes or backfills the configuration. Unique event IDs,
+deterministic alert identities, and evidence-link constraints prevent duplicates.
+Newly visible events older than C-L set a durable backfill flag, including delayed
+transaction commits. Login events after U are stored but deferred. Checkpoints
+never advance to a future event timestamp. The project does not claim unlimited
+late-event support or exactly-once streaming. R2 remains full-history processing.
 
 Fixture expected results are written by hand before running a detector. Tests must not
 generate their expected result by calling the logic under test.

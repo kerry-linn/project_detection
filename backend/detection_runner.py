@@ -8,6 +8,13 @@ from typing import Callable
 import psycopg
 
 from backend.db import Connection
+from backend.r1_processing import (
+    CheckpointClockRegression,
+    CheckpointRequired,
+    R1ProcessingConfig,
+    event_batches,
+    prepare_scan,
+)
 from backend.repositories.alerts import (
     CREATED,
     UNCHANGED,
@@ -18,6 +25,7 @@ from backend.repositories.alerts import (
     reconcile_denied_document_alerts,
     save_alert,
 )
+from backend.repositories.checkpoints import save_checkpoint
 from backend.repositories.detection_runs import (
     DetectionRunProgress,
     DetectionRunSummary,
@@ -27,7 +35,7 @@ from backend.repositories.detection_runs import (
     finish_run,
     start_run,
 )
-from backend.repositories.events import load_events
+from backend.repositories.events import load_document_denials
 from detections import denied_document_access, failed_login_success
 from detections.denied_document_access import (
     DeniedDocumentAccessConfig,
@@ -57,9 +65,12 @@ class DetectionRunError(RuntimeError):
 
 
 def run_failed_login_detection(
-    conn: Connection, config: FailedLoginSuccessConfig | None = None
+    conn: Connection,
+    config: FailedLoginSuccessConfig | None = None,
+    *,
+    processing: R1ProcessingConfig | None = None,
 ) -> DetectionRunSummary:
-    """Run R1 over all stored events and persist the results."""
+    """Full history by default; incremental runs require a full baseline first."""
     rule_config = config or FailedLoginSuccessConfig()
     rule = RuleRun(
         rule_id=failed_login_success.RULE_ID,
@@ -72,13 +83,13 @@ def run_failed_login_detection(
         alerts = detect_failed_logins_followed_by_success(events, rule_config)
         return [failed_login_alert_record(alert) for alert in alerts]
 
-    return _run_detection(conn, rule, detect)
+    return _run_detection(conn, rule, detect, processing or R1ProcessingConfig())
 
 
 def run_denied_document_detection(
     conn: Connection, config: DeniedDocumentAccessConfig | None = None
 ) -> DetectionRunSummary:
-    """Run R2 over all stored events and persist the results."""
+    """Run R2 over complete stored document-denial histories."""
     rule_config = config or DeniedDocumentAccessConfig()
     rule = RuleRun(
         rule_id=denied_document_access.RULE_ID,
@@ -96,7 +107,10 @@ def run_denied_document_detection(
 
 
 def _run_detection(
-    conn: Connection, rule: RuleRun, detect: Detector
+    conn: Connection,
+    rule: RuleRun,
+    detect: Detector,
+    processing: R1ProcessingConfig | None = None,
 ) -> DetectionRunSummary:
     """`conn` must have no open transaction.
 
@@ -113,7 +127,8 @@ def _run_detection(
     try:
         with conn.transaction():
             abandoned_run_ids = abandon_running_runs(conn)
-            run_id = start_run(conn, rule)
+            mode = processing.mode if processing else "full"
+            run_id = start_run(conn, rule, mode)
         for abandoned_id in abandoned_run_ids:
             logger.warning(
                 json.dumps({"event": "detection_run_abandoned", "run_id": abandoned_id})
@@ -122,7 +137,8 @@ def _run_detection(
         progress = DetectionRunProgress()
         try:
             with conn.transaction():
-                summary = _detect_and_save(conn, run_id, rule, detect, progress)
+                conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+                summary = _detect_and_save(conn, run_id, rule, detect, progress, processing)
                 duration_ms = finish_run(conn, summary)
                 summary = replace(summary, duration_ms=duration_ms)
         except Exception as error:
@@ -169,6 +185,10 @@ def _release_runner_lock(conn: Connection) -> None:
 
 
 def _failure_category(error: Exception) -> str:
+    if isinstance(error, CheckpointRequired):
+        return "checkpoint_required"
+    if isinstance(error, CheckpointClockRegression):
+        return "checkpoint_clock_regression"
     if isinstance(error, psycopg.OperationalError):
         return "database_unavailable"
     if isinstance(error, psycopg.Error):
@@ -182,24 +202,34 @@ def _detect_and_save(
     rule: RuleRun,
     detect: Detector,
     progress: DetectionRunProgress,
+    processing: R1ProcessingConfig | None = None,
 ) -> DetectionRunSummary:
     conn.execute("LOCK TABLE alerts IN EXCLUSIVE MODE")
-
-    events = load_events(conn)
-    progress.events_scanned = len(events)
-    if events:
-        progress.first_event_at = events[0].occurred_at
-        progress.last_event_at = events[-1].occurred_at
-    alerts = detect(events)
-    progress.alerts_detected = len(alerts)
-
-    if rule.rule_id == denied_document_access.RULE_ID:
-        outcomes = reconcile_denied_document_alerts(conn, alerts, rule)
+    scan = None
+    if processing is not None:
+        scan = prepare_scan(conn, rule, processing)
+        batches = event_batches(conn, rule, processing, scan)
     else:
-        outcomes = {CREATED: 0, UPDATED: 0, UNCHANGED: 0}
-        for alert in alerts:
-            outcome = save_alert(conn, alert)
-            outcomes[outcome] += 1
+        batches = [load_document_denials(conn)]
+
+    progress.events_scanned = 0
+    progress.alerts_detected = 0
+    outcomes = {CREATED: 0, UPDATED: 0, UNCHANGED: 0}
+    chunks_processed = 0
+    for events in batches:
+        _record_loaded_events(progress, events)
+        alerts = detect(events)
+        progress.alerts_detected += len(alerts)
+        if rule.rule_id == denied_document_access.RULE_ID:
+            outcomes = reconcile_denied_document_alerts(conn, alerts, rule)
+        else:
+            for alert in alerts:
+                outcome = save_alert(conn, alert)
+                outcomes[outcome] += 1
+        chunks_processed += 1
+
+    if scan is not None:
+        save_checkpoint(conn, rule, scan.checkpoint)
 
     return DetectionRunSummary(
         run_id=run_id,
@@ -208,11 +238,29 @@ def _detect_and_save(
         threshold=rule.threshold,
         window_microseconds=rule.window_microseconds,
         cooldown_microseconds=rule.cooldown_microseconds,
-        events_scanned=len(events),
+        events_scanned=progress.events_scanned,
         first_event_at=progress.first_event_at,
         last_event_at=progress.last_event_at,
-        alerts_detected=len(alerts),
+        alerts_detected=progress.alerts_detected,
         alerts_created=outcomes[CREATED],
         alerts_updated=outcomes[UPDATED],
         alerts_unchanged=outcomes[UNCHANGED],
+        processing_mode=processing.mode if processing else "full",
+        candidate_start=scan.candidate_start if scan else None,
+        checkpoint_at=scan.checkpoint.upper_bound if scan else None,
+        chunks_processed=chunks_processed,
+        late_events_detected=scan.late_events_detected if scan else 0,
+        future_events_deferred=scan.future_events_deferred if scan else 0,
+        backfill_required=scan.checkpoint.backfill_required if scan else False,
     )
+
+
+def _record_loaded_events(progress: DetectionRunProgress, events: list[SecurityEvent]) -> None:
+    progress.events_scanned += len(events)
+    if not events:
+        return
+    first, last = events[0].occurred_at, events[-1].occurred_at
+    if progress.first_event_at is None or first < progress.first_event_at:
+        progress.first_event_at = first
+    if progress.last_event_at is None or last > progress.last_event_at:
+        progress.last_event_at = last

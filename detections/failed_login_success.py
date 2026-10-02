@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Iterable
@@ -81,7 +82,7 @@ def detect_failed_logins_followed_by_success(
     rule_config = config or FailedLoginSuccessConfig()
     # A None organization is part of the key: the lab analyst belongs to no
     # tenant, and its account still needs protection.
-    failures_by_entity: dict[tuple[str | None, str], list[SecurityEvent]] = {}
+    failures_by_entity: dict[tuple[str | None, str], deque[SecurityEvent]] = {}
     alerts: list[FailedLoginSuccessAlert] = []
 
     for event in deduplicate_and_sort(events):
@@ -90,10 +91,10 @@ def detect_failed_logins_followed_by_success(
         entity = (event.organization_id, event.attempted_account)
 
         if event.event_type == "login_failed":
-            failures_by_entity.setdefault(entity, []).append(event)
+            failures_by_entity.setdefault(entity, deque()).append(event)
         elif event.event_type == "login_succeeded":
             failures = _failures_before(
-                failures_by_entity.get(entity, []), event, rule_config.window
+                failures_by_entity.get(entity, deque()), event, rule_config.window
             )
             if len(failures) >= rule_config.threshold:
                 alerts.append(_build_alert(event, failures, rule_config))
@@ -102,15 +103,17 @@ def detect_failed_logins_followed_by_success(
 
 
 def _failures_before(
-    failures: list[SecurityEvent],
+    failures: deque[SecurityEvent],
     success: SecurityEvent,
     window: timedelta,
 ) -> list[SecurityEvent]:
     """Window is [success - window, success): a failure at the success time is excluded."""
     window_start = success.occurred_at - window
+    while failures and failures[0].occurred_at < window_start:
+        failures.popleft()
     qualifying = []
     for failure in failures:
-        if window_start <= failure.occurred_at < success.occurred_at:
+        if failure.occurred_at < success.occurred_at:
             qualifying.append(failure)
     return qualifying
 

@@ -117,11 +117,11 @@ When checkpointing arrives, the checkpoint must commit with step 2. A checkpoint
 
 ### H3a. Measure and reduce unnecessary work first
 
-- [ ] Benchmark synthetic 1k, 10k, and 100k event datasets, with both many entities and one heavily active entity. Record hardware, dataset seed/distribution, elapsed time, peak memory, rows read, and alert count.
-- [ ] Push event-type and grouping filters into SQL. R1 needs login events; R2 needs document-denial events. Avoid loading unrelated document-change events.
-- [ ] Examine query plans before adding indexes. Consider rule-specific indexes only when the measured query benefits.
-- [ ] Keep the full-batch path as a correctness reference and backfill mechanism.
-- [ ] If repeated Python scans dominate, use a sliding window/deque or indexed timestamps while preserving all evidence IDs and exact boundaries. Output itself can be large when many successes share failures; do not promise constant memory.
+- [x] Benchmark synthetic 1k, 10k, and 100k event datasets, with both many entities and one heavily active entity. Record hardware, dataset seed/distribution, elapsed time, peak memory, rows read, and alert count.
+- [x] Push event-type and grouping filters into SQL. R1 needs login events; R2 needs document-denial events. Avoid loading unrelated document-change events.
+- [x] Examine query plans before adding indexes. Consider rule-specific indexes only when the measured query benefits.
+- [x] Keep the full-batch path as a correctness reference and backfill mechanism.
+- [x] If repeated Python scans dominate, use a sliding window/deque or indexed timestamps while preserving all evidence IDs and exact boundaries. Output itself can be large when many successes share failures; do not promise constant memory.
 
 ### H3b. Add bounded incremental R1
 
@@ -151,6 +151,11 @@ First release: retain full R2 history processing, or recompute complete historie
 Optional next stage: persist per-entity episode state, opening context, last denial, evidence references, and checkpoint atomically. Late arrivals must trigger reconciliation from a safe earlier boundary through all potentially affected episodes. Compare every intermediate result with full recomputation. Do not truncate R2 history merely to obtain a better benchmark.
 
 **Done:** correctness parity passes; R1 reads less history on steady-state runs; performance measurements support the claimed improvement; R2's actual processing model and remaining limits are documented.
+
+**Completion record — October 2, 2026:** H3a–H3c are implemented and verified in
+[Section 3](docs/hardening_section3.md), including raw benchmark/query-plan artifacts,
+atomic checkpoint and delayed-commit tests, full-reference parity, and explicit
+R2 scaling limits. The requirements above remain the record of the intended design.
 
 ## 8. H4 — Security boundaries, bounded APIs, and operational hygiene
 

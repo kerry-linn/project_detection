@@ -92,6 +92,23 @@ def test_activity_after_cooldown_creates_a_separate_alert(database_url: str) -> 
     assert len(keys) == 2
 
 
+def test_filtered_runner_preserves_an_episode_extending_for_hours(database_url: str) -> None:
+    initial = _distinct_denials(5)
+    _ingest(database_url, initial)
+    _run(database_url)
+    continuation = [
+        _denial(f"long-{index}", initial[-1].occurred_at + timedelta(minutes=10 * index), "doc-9")
+        for index in range(1, 25)
+    ]
+    _ingest(database_url, continuation)
+    summary = _run(database_url)
+    assert summary.events_scanned == 29
+    assert (summary.alerts_created, summary.alerts_updated) == (0, 1)
+    with connect(database_url) as conn:
+        assert len(_evidence(conn, FIRST_KEY)) == 29
+        _assert_active_matches_full_history(conn)
+
+
 def test_run_records_rule_and_cooldown(database_url: str) -> None:
     _ingest(database_url, _distinct_denials(5))
     _run(database_url)

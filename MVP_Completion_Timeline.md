@@ -46,17 +46,21 @@ Based on MVP_Hardening_Roadmap • October 1, 2026
 
 **Reference:** H3 • **Target:** Week 3; extend if needed
 
-- [ ] Measure runtime, memory, and events read on increasing synthetic datasets.
-- [ ] Filter relevant event types in SQL and review query plans before adding indexes.
-- [ ] Add incremental R1 with a checkpoint, overlapping lookback, and explicit late-event/backfill policy.
-- [ ] Commit checkpoint progress with alert/evidence writes; test crashes, restart, and long downtime.
-- [ ] Compare results with the existing full-batch detector.
+- [x] Measure runtime, memory, and events read on increasing synthetic datasets.
+- [x] Filter relevant event types in SQL and review query plans before adding indexes.
+- [x] Add incremental R1 with a checkpoint, overlapping lookback, and explicit late-event/backfill policy.
+- [x] Commit checkpoint progress with alert/evidence writes; test crashes, restart, and long downtime.
+- [x] Compare results with the existing full-batch detector.
 
 **R2 boundary:** keep full-history processing initially. Its episodes can extend for hours, so a short lookback alone can lose context. Stateful incremental R2 is a later extension.
 
 **Done when:** R1 reads less history while returning the same expected results, and R2 remains correct.
 
 **Save:** benchmark results and a concise processing-policy note.
+
+Completed October 2, 2026: [Section 3 policy, benchmarks, and verification](docs/hardening_section3.md).
+R1 full initialization/backfill remains available; incremental mode is explicit.
+Final checks: 174 backend tests with no skips, 9 frontend tests, typecheck, and build.
 
 ## Section 4 — Security and investigation workflow
 

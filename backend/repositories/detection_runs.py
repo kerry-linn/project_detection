@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 
 from backend.db import Connection
@@ -35,6 +35,13 @@ class DetectionRunSummary:
     alerts_updated: int
     alerts_unchanged: int
     duration_ms: int = 0
+    processing_mode: str = "full"
+    candidate_start: datetime | None = None
+    checkpoint_at: datetime | None = None
+    chunks_processed: int = 0
+    late_events_detected: int = 0
+    future_events_deferred: int = 0
+    backfill_required: bool = False
 
 
 @dataclass
@@ -45,14 +52,14 @@ class DetectionRunProgress:
     alerts_detected: int | None = None
 
 
-def start_run(conn: Connection, rule: RuleRun) -> int:
+def start_run(conn: Connection, rule: RuleRun, processing_mode: str = "full") -> int:
     row = conn.execute(
         """
         INSERT INTO detection_runs (
             rule_id, rule_version, threshold, window_microseconds,
-            cooldown_microseconds
+            cooldown_microseconds, processing_mode
         )
-        VALUES (%s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING run_id
         """,
         (
@@ -61,6 +68,7 @@ def start_run(conn: Connection, rule: RuleRun) -> int:
             rule.threshold,
             rule.window_microseconds,
             rule.cooldown_microseconds,
+            processing_mode,
         ),
     ).fetchone()
     return row["run_id"]
@@ -79,22 +87,19 @@ def finish_run(conn: Connection, summary: DetectionRunSummary) -> int:
             alerts_created = %(alerts_created)s,
             alerts_updated = %(alerts_updated)s,
             alerts_unchanged = %(alerts_unchanged)s,
+            candidate_start = %(candidate_start)s,
+            checkpoint_at = %(checkpoint_at)s,
+            chunks_processed = %(chunks_processed)s,
+            late_events_detected = %(late_events_detected)s,
+            future_events_deferred = %(future_events_deferred)s,
+            backfill_required = %(backfill_required)s,
             duration_ms = GREATEST(
                 0, FLOOR(EXTRACT(EPOCH FROM (clock_timestamp() - started_at)) * 1000)
             )
         WHERE run_id = %(run_id)s
         RETURNING duration_ms
         """,
-        {
-            "run_id": summary.run_id,
-            "events_scanned": summary.events_scanned,
-            "first_event_at": summary.first_event_at,
-            "last_event_at": summary.last_event_at,
-            "alerts_detected": summary.alerts_detected,
-            "alerts_created": summary.alerts_created,
-            "alerts_updated": summary.alerts_updated,
-            "alerts_unchanged": summary.alerts_unchanged,
-        },
+        asdict(summary),
     ).fetchone()
     return row["duration_ms"]
 

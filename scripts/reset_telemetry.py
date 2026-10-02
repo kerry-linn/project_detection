@@ -11,6 +11,7 @@ TELEMETRY_TABLES = (
     "alert_events",
     "alerts",
     "detection_runs",
+    "detection_checkpoints",
     "security_events",
     "sessions",
 )

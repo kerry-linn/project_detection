@@ -188,7 +188,7 @@ def test_detection_runs_record_successful_runs(database_url: str) -> None:
     assert [run["status"] for run in runs] == ["succeeded", "succeeded"]
     assert [run["alerts_created"] for run in runs] == [1, 0]
     assert [run["alerts_unchanged"] for run in runs] == [0, 1]
-    assert runs[0]["events_scanned"] == EXPECTED["stored_events"]
+    assert runs[0]["events_scanned"] == 13
     assert runs[0]["threshold"] == 5
     assert runs[0]["window_microseconds"] == 600_000_000
     assert runs[0]["first_event_at"] == datetime(

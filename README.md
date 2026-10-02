@@ -33,6 +33,8 @@ handling, detection engineering, Python, SQL, APIs, and security investigation.
 - Replay-safe alert storage: rerunning either detector never duplicates an alert
 - R2 late-event reconciliation: current alerts match full-history episodes while
   superseded alerts retain their evidence and analyst status
+- Optional incremental R1 with overlapping event-time windows, atomic checkpoints,
+  delayed-commit reporting, and an explicit full-history backfill path
 - Alert-to-event evidence links and a recorded history of detector runs
 - Three separate trust domains: application sessions, lab-analyst sessions, and a
   collector credential
@@ -52,6 +54,7 @@ Release evidence:
 - [Demo recording script](docs/DEMO.md)
 - [Days 12–14: release hardening and reproducibility](docs/DAYS_12_14.md)
 - [Hardening section 1: baseline and recovery evidence](docs/hardening_baseline.md)
+- [Hardening section 3: processing policy, benchmarks, and recovery](docs/hardening_section3.md)
 
 Walkthroughs of the code and data flow:
 
@@ -181,6 +184,21 @@ runner marks it `abandoned` after taking the exclusive runner lock. The persiste
 field contains a safe category, not exception text. See the
 [baseline and recovery report](docs/hardening_baseline.md) for test evidence.
 
+R1 defaults to full history. To initialize and then use incremental processing:
+
+```bash
+python -m scripts.run_detection --rule r1 --r1-mode full
+python -m scripts.run_detection --rule r1 --r1-mode incremental
+```
+
+Incremental R1 uses a fifteen-minute overlap and one-hour catch-up chunks by default.
+A changed rule configuration or lateness allowance requires a new full baseline.
+Inspect `backfill_required` in the report: when true, run full R1 to repair history
+outside the overlap. Future login events are stored and reported as deferred until
+database time reaches them. R2 always processes complete eligible denial histories.
+See the [Section 3 policy and measurements](docs/hardening_section3.md) for exact
+boundaries, failure behavior, configuration flags, and suggested cadence.
+
 Sign in to the UI as `analyst@lab.example.test`, open **Alerts**, and follow each alert to
 its evidence. The script checks every HTTP status and stops at the first unexpected one.
 
@@ -211,7 +229,7 @@ python -m scripts.detect_r1 fixtures/days_1_2.jsonl
 | Replay a scenario from the same starting state | `python -m scripts.reset_telemetry --yes` |
 | Rebuild everything from nothing | `docker compose down -v`, then the Compose, both migrate, and seed steps above |
 
-`reset_telemetry` deletes events, alerts, replacement links, evidence links, detector runs, and sessions from
+`reset_telemetry` deletes events, alerts, replacement links, evidence links, detector runs, checkpoints, and sessions from
 the `DATABASE_URL` database and keeps the seeded organizations, users, and documents.
 Without `--yes` it only names the target database. `docker compose down -v` deletes the
 PostgreSQL volume, including the test database. Neither requires editing PostgreSQL by
@@ -228,8 +246,9 @@ hand.
 - No alert status changes, case notes, or dispositions; status is displayed only.
 - Alerts are listed and filtered in full, and `GET /security/events` has no cursor
   pagination.
-- The detector rescans every stored event on each run; no incremental processing or
-  scheduling.
+- R2 still scans full eligible history; R1 full initialization/backfill does too.
+  Incremental R1 bounds the time span loaded per chunk, not the number of rows or
+  evidence links. No scheduler is installed.
 - Behind Docker or the Vite proxy, `source_ip` is often `127.0.0.1` or a gateway.
 - Unauthorized `/security/*` requests are rejected but not recorded as events, and a
   failed audit write leaves that attempt unrecorded.
@@ -239,8 +258,8 @@ hand.
 ## What is next
 
 The current hardening plan is [the six-section timeline](MVP_Completion_Timeline.md).
-Sections 1 and 2 cover runner recovery and R2 late-event reconciliation. Section 3
-addresses incremental processing.
+Sections 1–3 cover runner recovery, R2 late-event reconciliation, and measured
+incremental R1 processing. Section 4 is next: security and investigation workflow.
 
 See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,
 and rule specifications. See [Project roadmap](security_project_roadmap.txt) for the

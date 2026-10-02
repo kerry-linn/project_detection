@@ -1,0 +1,485 @@
+{
+  "seed": 3101,
+  "python": "3.14.7",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "dirty_worktree": true,
+  "dataset": "6-second spacing; 50% failed login, 10% successful login, 30% document denial, 10% document update; 100 accounts or one hot account",
+  "simulated_checkpoint_time": "2026-01-01T00:00:00+00:00",
+  "revision": "580f15866cbc2be4c43a53a5268aded06cfd255d",
+  "measurement": "load plus pure detection; tracemalloc Python allocations; excludes writes",
+  "phase": "baseline",
+  "datasets": [
+    {
+      "size": 1000,
+      "distribution": "many",
+      "evaluations": [
+        {
+          "rule": "r1",
+          "seconds": 0.021733,
+          "peak_python_mib": 1.373,
+          "events_read": 1000,
+          "alerts": 100,
+          "result_sha256": "6ef68d6311dfb60871ea61003ff401d4df68c3266e3fa63802a08b3b9d7a3007"
+        },
+        {
+          "rule": "r2",
+          "seconds": 0.01949,
+          "peak_python_mib": 1.372,
+          "events_read": 1000,
+          "alerts": 0,
+          "result_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "full_plan": [
+        {
+          "Plan": {
+            "Node Type": "Sort",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Startup Cost": 91.83,
+            "Total Cost": 94.33,
+            "Plan Rows": 1000,
+            "Plan Width": 258,
+            "Actual Startup Time": 0.222,
+            "Actual Total Time": 0.243,
+            "Actual Rows": 1000,
+            "Actual Loops": 1,
+            "Sort Key": [
+              "occurred_at",
+              "event_id"
+            ],
+            "Sort Method": "quicksort",
+            "Sort Space Used": 193,
+            "Sort Space Type": "Memory",
+            "Shared Hit Blocks": 32,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Seq Scan",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Relation Name": "security_events",
+                "Alias": "security_events",
+                "Startup Cost": 0.0,
+                "Total Cost": 42.0,
+                "Plan Rows": 1000,
+                "Plan Width": 258,
+                "Actual Startup Time": 0.005,
+                "Actual Total Time": 0.099,
+                "Actual Rows": 1000,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 32,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          "Planning": {
+            "Shared Hit Blocks": 3,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning Time": 0.045,
+          "Triggers": [],
+          "Execution Time": 0.267
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "distribution": "hot",
+      "evaluations": [
+        {
+          "rule": "r1",
+          "seconds": 0.022787,
+          "peak_python_mib": 1.37,
+          "events_read": 1000,
+          "alerts": 100,
+          "result_sha256": "644df40a3f699cdc3974ced9d36b4ff4e247d7e06efd6ecbbc06449c119d22eb"
+        },
+        {
+          "rule": "r2",
+          "seconds": 0.018867,
+          "peak_python_mib": 1.37,
+          "events_read": 1000,
+          "alerts": 1,
+          "result_sha256": "4584d8e7874d6608c43a0c80b349eebefef99b64a0b2d44812651173f8d0a174"
+        }
+      ],
+      "full_plan": [
+        {
+          "Plan": {
+            "Node Type": "Sort",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Startup Cost": 95.83,
+            "Total Cost": 98.33,
+            "Plan Rows": 1000,
+            "Plan Width": 258,
+            "Actual Startup Time": 0.256,
+            "Actual Total Time": 0.279,
+            "Actual Rows": 1000,
+            "Actual Loops": 1,
+            "Sort Key": [
+              "occurred_at",
+              "event_id"
+            ],
+            "Sort Method": "quicksort",
+            "Sort Space Used": 193,
+            "Sort Space Type": "Memory",
+            "Shared Hit Blocks": 36,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Seq Scan",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Relation Name": "security_events",
+                "Alias": "security_events",
+                "Startup Cost": 0.0,
+                "Total Cost": 46.0,
+                "Plan Rows": 1000,
+                "Plan Width": 258,
+                "Actual Startup Time": 0.007,
+                "Actual Total Time": 0.136,
+                "Actual Rows": 1000,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 36,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          "Planning": {
+            "Shared Hit Blocks": 5,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning Time": 0.072,
+          "Triggers": [],
+          "Execution Time": 0.306
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "distribution": "many",
+      "evaluations": [
+        {
+          "rule": "r1",
+          "seconds": 0.214451,
+          "peak_python_mib": 13.691,
+          "events_read": 10000,
+          "alerts": 1000,
+          "result_sha256": "9236131a6e7c8e86c468945c53fd7be62ad8b47f29a6a3ae06b50602c2926325"
+        },
+        {
+          "rule": "r2",
+          "seconds": 0.202795,
+          "peak_python_mib": 13.692,
+          "events_read": 10000,
+          "alerts": 0,
+          "result_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "full_plan": [
+        {
+          "Plan": {
+            "Node Type": "Index Scan",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Scan Direction": "Forward",
+            "Index Name": "security_events_time_idx",
+            "Relation Name": "security_events",
+            "Alias": "security_events",
+            "Startup Cost": 0.29,
+            "Total Cost": 951.97,
+            "Plan Rows": 10000,
+            "Plan Width": 259,
+            "Actual Startup Time": 0.016,
+            "Actual Total Time": 3.704,
+            "Actual Rows": 10000,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 279,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning": {
+            "Shared Hit Blocks": 5,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning Time": 0.116,
+          "Triggers": [],
+          "Execution Time": 4.216
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "distribution": "hot",
+      "evaluations": [
+        {
+          "rule": "r1",
+          "seconds": 0.24768,
+          "peak_python_mib": 13.673,
+          "events_read": 10000,
+          "alerts": 1000,
+          "result_sha256": "f966662fb5b2b8ea0b64282dc84a139a4ae1dd2b839a854459fe285510af4186"
+        },
+        {
+          "rule": "r2",
+          "seconds": 0.192613,
+          "peak_python_mib": 13.673,
+          "events_read": 10000,
+          "alerts": 1,
+          "result_sha256": "458d233ad408de0dbc073d3d6c6c5874e4c179277af1476a71fb9fe45b8b4dbd"
+        }
+      ],
+      "full_plan": [
+        {
+          "Plan": {
+            "Node Type": "Index Scan",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Scan Direction": "Forward",
+            "Index Name": "security_events_time_idx",
+            "Relation Name": "security_events",
+            "Alias": "security_events",
+            "Startup Cost": 0.29,
+            "Total Cost": 970.47,
+            "Plan Rows": 10000,
+            "Plan Width": 259,
+            "Actual Startup Time": 0.02,
+            "Actual Total Time": 4.001,
+            "Actual Rows": 10000,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 279,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning": {
+            "Shared Hit Blocks": 5,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning Time": 0.222,
+          "Triggers": [],
+          "Execution Time": 4.6
+        }
+      ]
+    },
+    {
+      "size": 100000,
+      "distribution": "many",
+      "evaluations": [
+        {
+          "rule": "r1",
+          "seconds": 2.344004,
+          "peak_python_mib": 136.92,
+          "events_read": 100000,
+          "alerts": 10000,
+          "result_sha256": "e1ad66a4f3c7740022a1254d7742c40efb202e161a586d17cef0af6ac23fdd78"
+        },
+        {
+          "rule": "r2",
+          "seconds": 2.007919,
+          "peak_python_mib": 136.92,
+          "events_read": 100000,
+          "alerts": 0,
+          "result_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "full_plan": [
+        {
+          "Plan": {
+            "Node Type": "Index Scan",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Scan Direction": "Forward",
+            "Index Name": "security_events_time_idx",
+            "Relation Name": "security_events",
+            "Alias": "security_events",
+            "Startup Cost": 0.42,
+            "Total Cost": 8818.1,
+            "Plan Rows": 100000,
+            "Plan Width": 259,
+            "Actual Startup Time": 0.031,
+            "Actual Total Time": 23.756,
+            "Actual Rows": 100000,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 2793,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning": {
+            "Shared Hit Blocks": 5,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning Time": 0.507,
+          "Triggers": [],
+          "Execution Time": 27.541
+        }
+      ]
+    },
+    {
+      "size": 100000,
+      "distribution": "hot",
+      "evaluations": [
+        {
+          "rule": "r1",
+          "seconds": 7.203247,
+          "peak_python_mib": 136.74,
+          "events_read": 100000,
+          "alerts": 10000,
+          "result_sha256": "999ce629e8bb10f8f0493aadaea31619332b5d33dceeaa7d62156a3949a8fe58"
+        },
+        {
+          "rule": "r2",
+          "seconds": 1.959083,
+          "peak_python_mib": 136.74,
+          "events_read": 100000,
+          "alerts": 1,
+          "result_sha256": "d707bfe09976a357297517931078be68367737fe8356255bc3884b5082ccb956"
+        }
+      ],
+      "full_plan": [
+        {
+          "Plan": {
+            "Node Type": "Index Scan",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Scan Direction": "Forward",
+            "Index Name": "security_events_time_idx",
+            "Relation Name": "security_events",
+            "Alias": "security_events",
+            "Startup Cost": 0.42,
+            "Total Cost": 8836.6,
+            "Plan Rows": 100000,
+            "Plan Width": 260,
+            "Actual Startup Time": 0.04,
+            "Actual Total Time": 24.878,
+            "Actual Rows": 100000,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 2768,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning": {
+            "Shared Hit Blocks": 5,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning Time": 0.93,
+          "Triggers": [],
+          "Execution Time": 28.823
+        }
+      ]
+    }
+  ],
+  "postgres": "17.11 (Debian 17.11-1.pgdg13+2)"
+}

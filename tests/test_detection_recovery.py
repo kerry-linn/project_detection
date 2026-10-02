@@ -88,7 +88,7 @@ def test_failure_immediately_before_commit_rolls_back_all_results(
             "alerts_updated, alerts_unchanged, duration_ms FROM detection_runs"
         ).fetchone()
     assert run["status"] == "failed"
-    assert (run["events_scanned"], run["alerts_detected"]) == (18, 1)
+    assert (run["events_scanned"], run["alerts_detected"]) == (13, 1)
     assert run["first_event_at"] <= run["last_event_at"]
     assert (run["alerts_created"], run["alerts_updated"], run["alerts_unchanged"]) == (0, 0, 0)
     assert run["duration_ms"] >= 0

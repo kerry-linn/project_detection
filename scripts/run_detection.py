@@ -10,6 +10,7 @@ import psycopg
 
 from backend.config import require_env
 from backend.db import connect
+from backend.r1_processing import R1ProcessingConfig
 from backend.detection_runner import (
     DetectionRunError,
     RunnerBusy,
@@ -36,6 +37,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["r1", "r2", "all"],
         default="all",
         help="Which rule to run (default: all)",
+    )
+    parser.add_argument(
+        "--r1-mode", choices=["full", "incremental"], default="full",
+        help="Full initializes/backfills R1; incremental requires a matching checkpoint",
+    )
+    parser.add_argument(
+        "--allowed-lateness-minutes", type=positive_int, default=15,
+        help="R1 overlap; changing this requires a full run (default: 15)",
+    )
+    parser.add_argument(
+        "--chunk-minutes", type=positive_int, default=60,
+        help="R1 incremental catch-up chunk span (default: 60)",
     )
     parser.add_argument(
         "--threshold",
@@ -102,10 +115,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     for rule_id, run, config in selected:
         try:
             with connect(require_env("DATABASE_URL")) as conn:
-                summary = run(conn, config)
+                if rule_id == failed_login_success.RULE_ID:
+                    summary = run(conn, config, processing=R1ProcessingConfig(
+                        mode=args.r1_mode,
+                        allowed_lateness=timedelta(minutes=args.allowed_lateness_minutes),
+                        chunk_span=timedelta(minutes=args.chunk_minutes),
+                    ))
+                else:
+                    summary = run(conn, config)
             report = asdict(summary)
             report["status"] = "succeeded"
-            for field in ("first_event_at", "last_event_at"):
+            for field in ("first_event_at", "last_event_at", "candidate_start", "checkpoint_at"):
                 if report[field] is not None:
                     report[field] = format_utc(report[field])
         except DetectionRunError as error:

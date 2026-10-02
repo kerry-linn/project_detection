@@ -1,10 +1,16 @@
 # Code map and study walkthrough
 
 Readability review recorded October 2, 2026, after hardening Section 2 and before
-Section 3. This guide describes the current implementation and the selective
+Section 3. The main walkthrough records that implementation and the selective
 cleanup. The [timeline](../MVP_Completion_Timeline.md),
 [roadmap](../MVP_Hardening_Roadmap.md), Days 1–14 walkthroughs, and hardening
 reports remain the record of how each feature was introduced.
+
+**Section 3 update:** incremental R1 has since been added. Read the
+[processing policy, extended code map, and checkpoint walkthrough](hardening_section3.md)
+after this guide. The historical review and its verification results below are
+preserved; the new report explains SQL filtering, chunks, snapshot visibility,
+the deque optimization, and their tests.
 
 ## Code map
 
@@ -351,7 +357,7 @@ Areas left unchanged after review:
   Compose, and CI directly declare dependencies and checks. No dependency or tooling
   change was needed for this review.
 
-Section 3 remains future work: the database runner still loads full event history,
+At the time of this cleanup, Section 3 remained future work: the database runner loaded full event history,
 and no checkpoint, query optimization, indexing change, or new processing policy
 was introduced by this cleanup.
 

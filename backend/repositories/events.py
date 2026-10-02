@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -89,6 +90,54 @@ def load_events(conn: Connection) -> list[SecurityEvent]:
         f"""
         SELECT {SELECT_EVENT_COLUMNS}
         FROM security_events
+        ORDER BY occurred_at, event_id
+        """
+    ).fetchall()
+    return [SecurityEvent(**row) for row in rows]
+
+
+def load_login_events(
+    conn: Connection,
+    *,
+    upper: datetime | None = None,
+    success_start: datetime | None = None,
+    failure_start: datetime | None = None,
+    include_start: bool = True,
+) -> list[SecurityEvent]:
+    conditions = [
+        "event_type IN ('login_failed', 'login_succeeded')",
+        "attempted_account IS NOT NULL",
+    ]
+    params = []
+    if upper is not None:
+        conditions.append("occurred_at <= %s")
+        params.append(upper)
+    if success_start is not None:
+        if failure_start is None:
+            raise ValueError("a success range requires its failure context")
+        conditions.append("occurred_at >= %s")
+        params.append(failure_start)
+        start_operator = ">=" if include_start else ">"
+        conditions.append(
+            "((event_type = 'login_failed' AND occurred_at >= %s) OR "
+            f"(event_type = 'login_succeeded' AND occurred_at {start_operator} %s))"
+        )
+        params.extend((failure_start, success_start))
+    rows = conn.execute(
+        f"SELECT {SELECT_EVENT_COLUMNS} FROM security_events "
+        f"WHERE {' AND '.join(conditions)} ORDER BY occurred_at, event_id",
+        params,
+    ).fetchall()
+    return [SecurityEvent(**row) for row in rows]
+
+
+def load_document_denials(conn: Connection) -> list[SecurityEvent]:
+    rows = conn.execute(
+        f"""
+        SELECT {SELECT_EVENT_COLUMNS} FROM security_events
+        WHERE event_type = 'access_denied' AND resource_type = 'document'
+          AND organization_id IS NOT NULL AND actor_id IS NOT NULL
+          AND resource_id IS NOT NULL
         ORDER BY occurred_at, event_id
         """
     ).fetchall()

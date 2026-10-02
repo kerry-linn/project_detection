@@ -292,6 +292,36 @@ def test_each_qualifying_success_creates_a_distinct_alert() -> None:
     assert alerts[0].alert_key != alerts[1].alert_key
 
 
+def test_sliding_window_matches_independent_full_scan() -> None:
+    randomizer = random.Random(3101)
+    events = []
+    for index in range(1000):
+        at = SUCCESS_TIME + timedelta(seconds=randomizer.randrange(7200))
+        event_type = "login_succeeded" if index % 7 == 0 else "login_failed"
+        events.append(_login_event(
+            f"event-{index:04d}", at, event_type,
+            attempted_account=f"user-{index % 3}@example.test",
+        ))
+    expected = {}
+    for success in events:
+        if success.event_type != "login_succeeded":
+            continue
+        failures = [
+            event for event in events
+            if event.event_type == "login_failed"
+            and event.attempted_account == success.attempted_account
+            and success.occurred_at - timedelta(minutes=10) <= event.occurred_at < success.occurred_at
+        ]
+        if len(failures) >= 5:
+            failures.sort(key=lambda event: (event.occurred_at, event.event_id))
+            expected[success.event_id] = tuple(event.event_id for event in failures)
+    actual = {
+        alert.success_event_id: alert.failure_event_ids
+        for alert in detect_failed_logins_followed_by_success(events)
+    }
+    assert actual == expected
+
+
 @pytest.mark.parametrize("reverse", [False, True])
 def test_parser_excludes_conflicts_before_detection(
     tmp_path: Path, reverse: bool
