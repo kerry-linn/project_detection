@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { CaseWorkflow } from "../components/CaseWorkflow";
+import { Pagination } from "../components/Pagination";
 import { Link, useParams } from "react-router";
 
 import { getAlert } from "../api/security";
@@ -8,9 +11,12 @@ import { useApi } from "../hooks/useApi";
 
 export function AlertDetailPage() {
   const alertKey = useParams().alertKey ?? "";
+  const [offset, setOffset] = useState(0);
+  const [replacementOffset, setReplacementOffset] = useState(0);
+  const [refresh, setRefresh] = useState(0);
   const { data: alert, error, loading } = useApi(
-    (token) => getAlert(token, alertKey),
-    `alert:${alertKey}`,
+    (token) => getAlert(token, alertKey, offset, replacementOffset),
+    `alert:${alertKey}:${offset}:${replacementOffset}:${refresh}`,
   );
 
   if (loading) return <Loading />;
@@ -37,7 +43,7 @@ export function AlertDetailPage() {
           This detection was superseded. Its evidence and analyst status remain available.
         </p>
       )}
-      {alert.needs_review && <p role="status">Prior case work needs review for this result.</p>}
+      {alert.needs_review && <p role="status">New evidence or prior case work requires review for this result.</p>}
       {alert.replaced_by.length > 0 && (
         <div>
           <h2>Replaced by</h2>
@@ -59,6 +65,11 @@ export function AlertDetailPage() {
         </div>
       )}
 
+      {(alert.replaces_total > 100 || alert.replaced_by_total > 100) && <>
+        <p>Replacement links: {alert.replaces_total} predecessors, {alert.replaced_by_total} successors; 100 per page.</p>
+        <Pagination label="replacements" offset={replacementOffset} limit={100}
+          total={Math.max(alert.replaces_total, alert.replaced_by_total)} onChange={setReplacementOffset} />
+      </>}
       <dl className="facts">
         <dt>Rule</dt>
         <dd className="mono">
@@ -108,11 +119,11 @@ export function AlertDetailPage() {
             </dd>
           </>
         )}
-        <dt>Source IPs</dt>
+        <dt>Source IPs on this evidence page</dt>
         <dd className="mono">{alert.source_ips.join(", ") || "—"}</dd>
         {alert.resource_ids.length > 0 && (
           <>
-            <dt>Requested resources</dt>
+            <dt>Requested resources on this evidence page</dt>
             <dd className="mono">{alert.resource_ids.join(", ")}</dd>
           </>
         )}
@@ -124,12 +135,20 @@ export function AlertDetailPage() {
         <dd className="mono">{alert.alert_key}</dd>
       </dl>
 
-      <h2>Evidence ({alert.evidence.length} events, oldest first)</h2>
+      {alert.cooldown_microseconds !== null && <p>
+        R2 opens when {alert.threshold} distinct documents are denied within {formatDuration(alert.window_microseconds)}.
+        The episode-wide count is {alert.match_count}; continued denials can extend the episode beyond that opening window.
+      </p>}
+      <h2>Evidence ({alert.evidence_total} events total, oldest first)</h2>
+      <p>Showing {alert.evidence.length} events from offset {alert.evidence_offset}.</p>
+      <Pagination label="evidence" offset={offset} total={alert.evidence_total}
+        limit={alert.evidence_limit} onChange={setOffset} />
       {alert.evidence.length > 0 ? (
         <EventTable events={alert.evidence} />
       ) : (
-        <EmptyState>This alert has no linked evidence events.</EmptyState>
+        <EmptyState>No evidence on this page.</EmptyState>
       )}
+      <CaseWorkflow key={`${alertKey}:${alert.revision}`} alert={alert} onSaved={() => setRefresh(refresh + 1)} />
     </>
   );
 }

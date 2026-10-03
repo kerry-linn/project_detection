@@ -1,0 +1,7 @@
+search index=__INDEX__ sourcetype="detection_lab:json" dataset_id="__DATASET__" earliest=0 latest=+10y
+| dedup event_id
+| where event_type="login_failed"
+| eval organization_id=json_extract_exact(_raw,"organization_id"), source_ip=json_extract_exact(_raw,"source_ip")
+| eval org_key=if(isnull(organization_id),"0:","1:".organization_id), ip_key=coalesce(source_ip,"(missing)")
+| stats count AS failures values(event_id) AS event_ids BY org_key attempted_account ip_key
+| sort 0 org_key attempted_account ip_key

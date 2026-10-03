@@ -1,0 +1,5 @@
+search index=__INDEX__ sourcetype="detection_lab:json" dataset_id="__DATASET__" earliest=0 latest=+10y
+| search event_id IN ("evt-004","evt-005","evt-006","evt-007","evt-008","evt-009")
+| dedup event_id
+| sort 0 occurred_at event_id
+| table occurred_at event_id event_type organization_id attempted_account source_ip _raw

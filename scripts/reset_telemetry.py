@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 from typing import Sequence
 
 from backend.config import require_env
 from backend.db import Connection, connect
 
 TELEMETRY_TABLES = (
+    "case_activity",
     "alert_replacements",
     "alert_events",
     "alerts",
@@ -39,13 +41,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--yes", action="store_true", help="Confirm deleting the telemetry"
     )
+    parser.add_argument("--confirm-target", help="Exact host:port/database shown by the dry run")
     args = parser.parse_args(argv)
 
     with connect(require_env(args.database_url_env)) as conn:
         target = f"database {conn.info.dbname} on {conn.info.host}:{conn.info.port}"
-        if not args.yes:
+        identity = f"{conn.info.host}:{conn.info.port}/{conn.info.dbname}"
+        if not args.yes or os.environ.get("LAB_ENV") != "local" or args.confirm_target != identity:
             print(f"Would delete {', '.join(TELEMETRY_TABLES)} from {target}.")
-            print("Rerun with --yes to confirm.")
+            print(f"Requires LAB_ENV=local, --yes, and --confirm-target {identity}.")
             return 2
         reset_telemetry(conn)
 

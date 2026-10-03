@@ -78,7 +78,7 @@ def assert_full_parity(url, upper, config=ONE_FAILURE):
         actual = {}
         for stored in list_alerts(conn):
             row = asdict(stored)
-            for field in ("status", "detection_state", "needs_review", "created_at", "updated_at"):
+            for field in ("status", "detection_state", "needs_review", "created_at", "updated_at", "disposition", "rationale", "revision"):
                 del row[field]
             links = conn.execute(
                 "SELECT event_id, evidence_role FROM alert_events WHERE alert_key = %s",

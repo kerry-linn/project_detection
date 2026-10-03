@@ -32,6 +32,9 @@ const R1_ALERT: AlertSummary = {
   status: "new",
   detection_state: "active",
   needs_review: false,
+  disposition: null,
+  rationale: null,
+  revision: 0,
   organization_id: "org-alpha",
   attempted_account: "alice@alpha.example.test",
   actor_id: "user-alice",
@@ -95,6 +98,11 @@ const R2_DETAIL: AlertDetail = {
     denial(3, "doc-alpha-005", "not_owner"),
     denial(4, "doc-beta-001", "cross_organization"),
   ],
+  evidence_total: 5,
+  evidence_offset: 0,
+  evidence_limit: 50,
+  replaces_total: 0,
+  replaced_by_total: 0,
   replaces: [],
   replaced_by: [],
 };
@@ -103,12 +111,30 @@ type Reply = [status: number, body?: unknown];
 
 function mockApi(routes: Record<string, Reply>) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    const reply = routes[`${init?.method ?? "GET"} ${url}`];
+    let reply = routes[`${init?.method ?? "GET"} ${url}`];
+    let total: number | undefined;
+    if (!reply && url.startsWith("/api/security/alerts?")) {
+      const query = new URL(url, "http://localhost").searchParams;
+      const base = query.get("include_superseded") === "true"
+        ? "/api/security/alerts?include_superseded=true" : "/api/security/alerts";
+      const source = routes[`GET ${base}`];
+      if (source && Array.isArray(source[1])) {
+        const items = (source[1] as AlertSummary[]).filter((alert) =>
+          (!query.get("rule") || alert.rule_id === query.get("rule")) &&
+          (!query.get("status") || alert.status === query.get("status")) &&
+          (!query.get("organization") || alert.organization_id === query.get("organization")) &&
+          (!query.get("entity") || `${alert.actor_id} ${alert.attempted_account}`.toLowerCase().includes(query.get("entity")!.toLowerCase())));
+        total = items.length;
+        const offset = Number(query.get("offset") ?? 0);
+        reply = [200, items.slice(offset, offset + 50)];
+      }
+    }
+    if (!reply && url.includes("/activity?")) reply = [200, []];
     if (!reply) throw new Error(`unexpected request ${init?.method ?? "GET"} ${url}`);
     const [status, body] = reply;
     return new Response(body === undefined ? null : JSON.stringify(body), {
       status,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(total === undefined ? {} : { "X-Total-Count": String(total) }) },
     });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -236,12 +262,13 @@ describe("analyst investigation", () => {
     await screen.findByText("Showing 2 of 2 alerts");
 
     await userEvent.selectOptions(screen.getByLabelText("Rule"), R2_ALERT.rule_id);
-    expect(screen.getByText("Showing 1 of 2 alerts")).toBeInTheDocument();
+    expect(await screen.findByText("Showing 1 of 1 alerts")).toBeInTheDocument();
     expect(screen.getByText("user-bob")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Clear" }));
     await userEvent.type(screen.getByLabelText("Actor or account"), "ALICE@");
-    expect(screen.getByText("Showing 1 of 2 alerts")).toBeInTheDocument();
+    expect(screen.getByLabelText("Actor or account")).toHaveValue("ALICE@");
+    expect(await screen.findByText("Showing 1 of 1 alerts")).toBeInTheDocument();
     expect(screen.getByText("alice@alpha.example.test")).toBeInTheDocument();
   });
 
@@ -256,21 +283,21 @@ describe("analyst investigation", () => {
       "tok-analyst",
     );
 
-    await screen.findByText("Showing 1 of 2 alerts");
+    await screen.findByText("Showing 1 of 1 alerts");
     expect(screen.getByLabelText("Rule")).toHaveValue(R2_ALERT.rule_id);
     expect(screen.getByLabelText("Status")).toHaveValue("new");
     expect(screen.getByLabelText("Organization")).toHaveValue("org-alpha");
     expect(screen.getByLabelText("Actor or account")).toHaveValue("BOB");
 
     await userEvent.click(screen.getByLabelText("Include superseded alerts"));
-    await screen.findByText("Showing 1 of 2 alerts");
+    await screen.findByText("Showing 1 of 1 alerts");
     expect(screen.getByLabelText("Rule")).toHaveValue(R2_ALERT.rule_id);
     expect(screen.getByLabelText("Actor or account")).toHaveValue("BOB");
 
     await userEvent.click(screen.getByLabelText("Include superseded alerts"));
-    await screen.findByText("Showing 1 of 2 alerts");
+    await screen.findByText("Showing 1 of 1 alerts");
     await userEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(screen.getByText("Showing 2 of 2 alerts")).toBeInTheDocument();
+    expect(await screen.findByText("Showing 2 of 2 alerts")).toBeInTheDocument();
     expect(screen.getByLabelText("Include superseded alerts")).toBeChecked();
     expect(screen.getByLabelText("Rule")).toHaveValue("");
     expect(screen.getByLabelText("Status")).toHaveValue("");
@@ -304,5 +331,59 @@ describe("analyst investigation", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Raw event app-4" }));
     expect(screen.getByText(/"request_id": "req-4"/)).toBeInTheDocument();
+  });
+});
+
+describe("case changes and bounded evidence", () => {
+  it("submits a disposition with the displayed revision and handles conflicts", async () => {
+    const path = `/api/security/alerts/${encodeURIComponent(R2_ALERT.alert_key)}`;
+    const fetchMock = mockApi({
+      "GET /api/auth/me": [200, ANALYST],
+      [`GET ${path}`]: [200, R2_DETAIL],
+      [`PATCH ${path}`]: [409, { detail: "case changed; reload before saving" }],
+    });
+    renderApp(`/alerts/${encodeURIComponent(R2_ALERT.alert_key)}`, "tok-analyst");
+    await screen.findByLabelText("Case status");
+    await userEvent.selectOptions(screen.getByLabelText("Case status"), "closed");
+    expect(screen.getByRole("button", { name: "Save decision" })).toBeDisabled();
+    await userEvent.selectOptions(screen.getByLabelText("Disposition"), "benign");
+    await userEvent.type(screen.getByLabelText("Rationale"), "Approved stale bookmark test.");
+    await userEvent.click(screen.getByRole("button", { name: "Save decision" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("case changed; reload before saving");
+    expect(screen.getByLabelText("Rationale")).toHaveValue("Approved stale bookmark test.");
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
+    expect(JSON.parse(call![1]!.body as string)).toEqual({
+      revision: 0, status: "closed", disposition: "benign", rationale: "Approved stale bookmark test.",
+    });
+  });
+
+  it("paginates evidence without presenting one page as the complete case", async () => {
+    const path = `/api/security/alerts/${encodeURIComponent(R2_ALERT.alert_key)}`;
+    mockApi({
+      "GET /api/auth/me": [200, ANALYST],
+      [`GET ${path}`]: [200, { ...R2_DETAIL, evidence: [R2_DETAIL.evidence[0]], evidence_limit: 1 }],
+      [`GET ${path}?evidence_offset=1`]: [200, {
+        ...R2_DETAIL, evidence: [R2_DETAIL.evidence[1]], evidence_limit: 1, evidence_offset: 1,
+      }],
+    });
+    renderApp(`/alerts/${encodeURIComponent(R2_ALERT.alert_key)}`, "tok-analyst");
+    expect(await screen.findByText("Evidence (5 events total, oldest first)")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Next evidence" }));
+    expect(await screen.findByText("Showing 1 events from offset 1.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Raw event app-1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Raw event app-0" })).not.toBeInTheDocument();
+  });
+
+  it("expires the session when a case write returns 401", async () => {
+    const path = `/api/security/alerts/${encodeURIComponent(R2_ALERT.alert_key)}`;
+    mockApi({
+      "GET /api/auth/me": [200, ANALYST], [`GET ${path}`]: [200, R2_DETAIL],
+      [`POST ${path}/notes`]: [401, { detail: "invalid or expired session" }],
+    });
+    renderApp(`/alerts/${encodeURIComponent(R2_ALERT.alert_key)}`, "tok-analyst");
+    await userEvent.type(await screen.findByLabelText("Investigation note"), "Review evidence.");
+    await userEvent.click(screen.getByRole("button", { name: "Add note" }));
+    expect(await screen.findByText(/session has expired/)).toBeInTheDocument();
+    expect(sessionStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
   });
 });

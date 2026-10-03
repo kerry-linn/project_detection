@@ -2,7 +2,7 @@
 
 This document defines the project's security model, event contract, detections, and
 engineering rules. Sections marked implemented describe v0.1 behavior verified by tests;
-everything else, including R3, R4, and the case workflow, is planned design.
+everything else, including R3 and R4, is planned design.
 
 ## Application and threat model
 
@@ -15,8 +15,7 @@ and alert evidence.
 - **Member:** reads and updates documents they own.
 - **Organization administrator:** manages documents and membership only within their
   organization.
-- **Lab analyst:** reads global security events and alerts and their evidence. Alert
-  status changes, notes, and dispositions are planned for v1.0.
+- **Lab analyst:** reads global security events and alerts and their evidence. Analysts can change case status, record dispositions, and add notes with revision checks.
 - **Unauthenticated user:** may attempt authentication but has no application access.
 - **Trusted collector:** may submit fixture or external events through a separate,
   credential-protected ingestion path.
@@ -125,7 +124,7 @@ identified as synthetic.
 - `alerts`: rule ID and version, deterministic key, entity, time range, reason, severity,
   status, and disposition.
 - `alert_events`: many-to-many evidence links between alerts and security events.
-- `case_notes`: alert, analyst author, timestamp, and note text.
+- `case_activity`: append-only decisions and notes, with analyst author, timestamp, and revision.
 - `detection_runs`: run ID, rule versions, start/end time, evaluated event-time range,
   events scanned, alerts created, alerts updated or suppressed, and run outcome.
 
@@ -148,7 +147,7 @@ Database access uses parameterized SQL or an ORM.
   event.
 - `detection_runs` records rule version, configuration, timing, status, scanned event-time
   range, alert outcome counts, and a sanitized failure category.
-- `case_notes` and disposition fields remain planned.
+- Case activity and dispositions arrived in hardening Section 4 (migration 007).
 
 **Implemented in Days 7–9** ([`backend/migrations/002_application.sql`](../backend/migrations/002_application.sql)):
 
@@ -202,7 +201,7 @@ for benchmark evidence, exact ranges, and recovery tests.
    deterministic alerts and evidence links.
 6. The investigation API returns events, alerts, and case data only to the lab analyst or
    an explicitly scoped read-only collector. v0.1 serves events and alerts to the analyst;
-   case data and the read-only collector are planned.
+   case data is analyst-only; the read-only collector remains planned.
 7. A later export sends the same stored events to Splunk for manual SPL comparison.
 
 Ordinary clients may not assert actor identity, organization, source IP, or request outcome.
@@ -238,6 +237,20 @@ lab does not claim tamper-proof or lossless logging.
 
 Denied `/security/*` requests are rejected with `403` but not recorded as events in v0.1;
 R2 does not need them, and adding them would only expand the resource taxonomy.
+
+## Hardening Section 4 threat-model update
+
+Analyst case writes are a separate boundary: member/admin/collector credentials cannot
+change decisions or read history. Sessions re-read current role, expiry, and revocation.
+Revision checks prevent silent overwrites; detector changes also invalidate stale writes.
+A transaction couples case state to immutable activity. Late evidence and R2 replacements
+retain decisions and signal review. Evidence foreign keys remain intact.
+
+A 1 MiB body cap, bounded inputs, and paginated SQL-filtered reads reduce resource abuse.
+Request logs contain only generated IDs/status/categories. No automatic retention deletion
+exists; guarded lab reset is explicitly destructive. These controls do not address public
+hosting, XSS theft of sessionStorage tokens, shared seed credentials, login flooding, or
+malicious database owners. Offset browsing is not a stable export snapshot.
 
 ## Detection specification template
 
@@ -434,7 +447,9 @@ a bounded `limit`; cursor pagination remains planned), `GET /security/alerts`, a
 Implemented in Days 7–9: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`,
 `GET/POST /documents`, and `GET/PATCH /documents/{id}`. `/security/*` now requires a
 lab-analyst session, and `GET /security/events` gains an `actor_id` filter. The download
-route, alert updates, notes, and a scoped read-only collector credential remain planned.
+route and a scoped read-only collector credential remain planned. Section 4 implements
+alert updates, notes, and `GET /security/alerts/{key}/activity`; see the
+[case contract and verification](hardening_section4.md).
 
 Days 10–11 add a React client over these routes and no new endpoints. The client stores
 only the opaque session token and re-reads the profile from `GET /auth/me`; its role-aware

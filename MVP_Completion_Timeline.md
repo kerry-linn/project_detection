@@ -66,33 +66,41 @@ Final checks: 174 backend tests with no skips, 9 frontend tests, typecheck, and 
 
 **Reference:** H4–H5 • **Target:** Week 4; extend if needed
 
-- [ ] Verify direct API authorization, session expiry/revocation, and cross-tenant behavior, including all new routes.
-- [ ] Bound request sizes and list/evidence responses; paginate large results and apply filters server-side.
-- [ ] Verify concurrent ingestion, secret-free logs, safer reset behavior, migrations, and backup/restore.
-- [ ] Add analyst status changes, notes, dispositions, and change history; prevent silent overwrites between analysts.
-- [ ] Preserve case decisions during detection reruns and flag new evidence for review.
-- [ ] Complete one suspicious investigation and one benign investigation that actually triggered an alert.
+- [x] Verify direct API authorization, session expiry/revocation, and cross-tenant behavior, including all new routes.
+- [x] Bound request sizes and list/evidence responses; paginate large results and apply filters server-side.
+- [x] Verify concurrent ingestion, secret-free logs, safer reset behavior, migrations, and backup/restore.
+- [x] Add analyst status changes, notes, dispositions, and change history; prevent silent overwrites between analysts.
+- [x] Preserve case decisions during detection reruns and flag new evidence for review.
+- [x] Complete one suspicious investigation and one benign investigation that actually triggered an alert.
 - [ ] Refresh README/limitations, repeat clean setup, verify CI, and record the short demo.
 
 **Done when:** a reviewer can reproduce, investigate, and disposition alerts; access controls and recovery tests pass.
 
 **Save:** two investigation reports, updated setup documentation, and a 2–3 minute demo.
 
-**Milestone reached: hardened MVP.** Proceed to integrations after critical correctness and authorization failures are resolved.
+Implementation, local acceptance, and a 2:13 captioned demo are recorded in
+[Section 4 verification](docs/hardening_section4.md). Final hosted CI awaits publishing
+the final revision.
+
+**Release gate: final hosted CI.** Proceed to integrations after critical correctness and authorization failures are resolved.
 
 ## Section 5 — Splunk
 
 **Reference:** S1 • **Target:** Week 5
 
-- [ ] Choose a supported Splunk environment and export the same synthetic events used by Python.
-- [ ] Verify event timestamps, field extraction, null organizations, and duplicate handling.
-- [ ] Write account activity, failed-login, denied-resource, and evidence searches.
-- [ ] Recreate R1 in SPL using its exact rolling window and grouping rules.
-- [ ] Compare triggering success IDs, failure counts, and evidence IDs against Python and expected fixtures; investigate discrepancies.
+- [x] Choose a supported Splunk environment and export the same synthetic events used by Python.
+- [x] Verify event timestamps, field extraction, null organizations, and duplicate handling.
+- [x] Write account activity, failed-login, denied-resource, and evidence searches.
+- [x] Recreate R1 in SPL using its exact rolling window and grouping rules.
+- [x] Compare triggering success IDs, failure counts, and evidence IDs against Python and expected fixtures; investigate discrepancies.
 
 **Done when:** the declared comparison cases match and any precision or platform limitations are documented.
 
 **Save:** SPL queries, setup instructions, sample results, and a short comparison report.
+
+October 3, 2026: fixture export, guarded importer, sourcetype configuration, SPL,
+independent expectations, Python comparison tests, and learning notes are implemented.
+Live Splunk acceptance passed on the pinned 10.4.3 image; see [Section 5 status](docs/splunk_parity.md).
 
 ## Section 6 — API automation
 

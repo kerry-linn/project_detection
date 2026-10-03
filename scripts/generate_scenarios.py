@@ -58,7 +58,7 @@ def call(
     print(f"{who:<26} {method:<4} {path:<28} -> {status}")
     if status != expected:
         raise ScenarioError(
-            f"{method} {path} as {who} returned {status}, expected {expected}: {text}"
+            f"{method} {path} as {who} returned {status}, expected {expected}"
         )
     return text
 
@@ -100,7 +100,22 @@ def benign(api_url: str, password: str) -> None:
         read_document(api_url, bob, "doc-alpha-001", 403)
 
 
-SCENARIOS = {"suspicious": suspicious, "benign": benign}
+def benign_alert(api_url: str, password: str) -> None:
+    """A synthetic stale-bookmark exercise that crosses R2's threshold."""
+    bob = login(api_url, BOB, password)
+    for index in range(1, 6):
+        read_document(api_url, bob, f"retired-bookmark-{index}", 404)
+
+
+def triage(api_url: str, password: str) -> None:
+    """One suspicious R1 and one R2 with documented benign exercise context."""
+    for _ in range(5):
+        fail_login(api_url, ALICE)
+    login(api_url, ALICE, password)
+    benign_alert(api_url, password)
+
+
+SCENARIOS = {"suspicious": suspicious, "benign": benign, "benign-alert": benign_alert, "triage": triage}
 
 
 def main(argv: Sequence[str] | None = None) -> int:

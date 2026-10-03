@@ -1,0 +1,29 @@
+search index=__INDEX__ sourcetype="detection_lab:json" dataset_id="__DATASET__" earliest=0 latest=+10y
+| eventstats dc(_raw) AS variants BY event_id
+| dedup event_id
+| eventstats count AS unique_events max(variants) AS max_variants
+| eval organization_id=json_extract_exact(_raw,"organization_id")
+| eval org_key=if(isnull(organization_id), "0:", "1:".organization_id)
+| appendpipe [
+    where max_variants=1 AND unique_events<=1000 AND (event_type="login_failed" OR event_type="login_succeeded")
+    | eval failure_token=if(event_type="login_failed", occurred_at."|".event_id, null())
+    | sort 0 _time occurred_at event_id
+    | streamstats time_window=601s values(failure_token) AS candidates BY org_key attempted_account
+    | where event_type="login_succeeded"
+    | rename event_id AS success_event_id
+    | eval success_us=round(strptime(substr(occurred_at,1,19)."+0000", "%Y-%m-%dT%H:%M:%S%z")*1000000)+tonumber(substr(occurred_at,21,6))
+    | mvexpand candidates
+    | eval failure_us=round(strptime(substr(candidates,1,19)."+0000", "%Y-%m-%dT%H:%M:%S%z")*1000000)+tonumber(substr(candidates,21,6))
+    | where failure_us>=success_us-600000000 AND failure_us<success_us
+    | stats values(candidates) AS ordered_tokens BY success_event_id org_key attempted_account
+    | eval ordered_tokens=mvsort(ordered_tokens), failure_count=mvcount(ordered_tokens)
+    | where failure_count>=5
+    | eval failure_event_ids=mvmap(ordered_tokens,substr(ordered_tokens,29)), result_type="alert"
+    | eval evidence_event_ids=mvappend(failure_event_ids,success_event_id)
+]
+| where result_type="alert" OR variants>1 OR unique_events>1000
+| eval result_type=if(variants>1 OR unique_events>1000,"error",result_type)
+| eval error=case(variants>1,"conflicting_event_id",unique_events>1000,"fixture_limit_exceeded")
+| eval organization_id=if(org_key="0:",null(),substr(org_key,3))
+| sort 0 success_event_id event_id
+| table result_type error event_id success_event_id organization_id attempted_account failure_count failure_event_ids evidence_event_ids

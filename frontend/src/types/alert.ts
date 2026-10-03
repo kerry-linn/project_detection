@@ -10,6 +10,9 @@ export interface AlertSummary {
   status: AlertStatus;
   detection_state: "active" | "superseded";
   needs_review: boolean;
+  disposition: Disposition | null;
+  rationale: string | null;
+  revision: number;
   organization_id: string | null;
   attempted_account: string | null;
   actor_id: string | null;
@@ -30,6 +33,30 @@ export interface AlertDetail extends AlertSummary {
   source_ips: string[];
   resource_ids: string[];
   evidence: EvidenceEvent[];
+  evidence_total: number;
+  evidence_offset: number;
+  evidence_limit: number;
+  replaces_total: number;
+  replaced_by_total: number;
   replaces: string[];
   replaced_by: string[];
+}
+
+
+export type Disposition = "benign" | "suspicious" | "inconclusive";
+export interface CaseDecision {
+  revision: number;
+  status: AlertStatus;
+  disposition: Disposition | null;
+  rationale: string;
+}
+export interface CaseActivity {
+  activity_id: number;
+  author_id: string;
+  created_at: string;
+  revision: number;
+  kind: "decision" | "note";
+  status: AlertStatus;
+  disposition: Disposition | null;
+  body: string;
 }

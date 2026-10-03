@@ -1,0 +1,83 @@
+[
+  {
+    "occurred_at": "2026-09-17T12:00:00.000000Z",
+    "event_id": "evt-001",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_succeeded",
+    "outcome": "success",
+    "source_ip": "192.0.2.10"
+  },
+  {
+    "occurred_at": "2026-09-17T12:49:59.000000Z",
+    "event_id": "evt-003",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_failed",
+    "outcome": "failure",
+    "source_ip": "198.51.100.40"
+  },
+  {
+    "occurred_at": "2026-09-17T12:50:00.000000Z",
+    "event_id": "evt-004",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_failed",
+    "outcome": "failure",
+    "source_ip": "198.51.100.40"
+  },
+  {
+    "occurred_at": "2026-09-17T12:52:00.000000Z",
+    "event_id": "evt-005",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_failed",
+    "outcome": "failure",
+    "source_ip": "198.51.100.40"
+  },
+  {
+    "occurred_at": "2026-09-17T12:54:00.000000Z",
+    "event_id": "evt-006",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_failed",
+    "outcome": "failure",
+    "source_ip": "198.51.100.41"
+  },
+  {
+    "occurred_at": "2026-09-17T12:56:00.000000Z",
+    "event_id": "evt-007",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_failed",
+    "outcome": "failure",
+    "source_ip": "198.51.100.41"
+  },
+  {
+    "occurred_at": "2026-09-17T12:57:00.000000Z",
+    "event_id": "evt-011",
+    "organization_id": "org-beta",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_failed",
+    "outcome": "failure",
+    "source_ip": "203.0.113.60"
+  },
+  {
+    "occurred_at": "2026-09-17T12:59:00.000000Z",
+    "event_id": "evt-008",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_failed",
+    "outcome": "failure",
+    "source_ip": "198.51.100.42"
+  },
+  {
+    "occurred_at": "2026-09-17T13:00:00.000000Z",
+    "event_id": "evt-009",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "event_type": "login_succeeded",
+    "outcome": "success",
+    "source_ip": "198.51.100.42"
+  }
+]

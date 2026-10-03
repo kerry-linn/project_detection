@@ -32,11 +32,12 @@ def get_document(conn: Connection, document_id: str) -> Document | None:
 
 
 def list_documents(
-    conn: Connection, *, organization_id: str, owner_id: str | None
+    conn: Connection, *, organization_id: str, owner_id: str | None,
+    limit: int = 50, offset: int = 0
 ) -> list[Document]:
     """`owner_id=None` lists the whole organization (administrator scope)."""
     conditions = ["organization_id = %s"]
-    params: list[str] = [organization_id]
+    params: list[object] = [organization_id]
     if owner_id is not None:
         conditions.append("owner_id = %s")
         params.append(owner_id)
@@ -45,9 +46,9 @@ def list_documents(
         SELECT {SELECT_DOCUMENT_COLUMNS}
         FROM documents
         WHERE {" AND ".join(conditions)}
-        ORDER BY updated_at DESC, document_id
+        ORDER BY updated_at DESC, document_id LIMIT %s OFFSET %s
         """,
-        params,
+        [*params, limit, offset],
     ).fetchall()
     return [Document(**row) for row in rows]
 
@@ -91,3 +92,11 @@ def update_document(
         (title, body, document_id),
     ).fetchone()
     return Document(**row)
+
+
+def count_documents(conn: Connection, organization_id: str, owner_id: str | None) -> int:
+    return conn.execute(
+        "SELECT count(*) AS n FROM documents WHERE organization_id = %s "
+        "AND (%s::text IS NULL OR owner_id = %s)",
+        (organization_id, owner_id, owner_id),
+    ).fetchone()["n"]

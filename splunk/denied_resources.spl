@@ -1,0 +1,7 @@
+search index=__INDEX__ sourcetype="detection_lab:json" dataset_id="__DATASET__" earliest=0 latest=+10y
+| dedup event_id
+| where event_type="access_denied"
+| eval actor_id=json_extract_exact(_raw,"actor_id"), resource_id=json_extract_exact(_raw,"resource_id")
+| eval actor_key=coalesce(actor_id,"(missing)"), resource_key=coalesce(resource_id,"(missing)")
+| stats count AS denials values(event_id) AS event_ids BY organization_id actor_key resource_type resource_key
+| sort 0 organization_id actor_key resource_type resource_key

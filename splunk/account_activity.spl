@@ -1,0 +1,5 @@
+search index=__INDEX__ sourcetype="detection_lab:json" dataset_id="__DATASET__" earliest=0 latest=+10y
+| dedup event_id
+| search attempted_account="alice@example.test"
+| sort 0 occurred_at event_id
+| table occurred_at event_id organization_id attempted_account event_type outcome source_ip

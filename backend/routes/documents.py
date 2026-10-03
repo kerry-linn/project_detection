@@ -4,13 +4,14 @@ import uuid
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 
 from backend.audit import RequestContext, record_event, request_context
 from backend.auth import get_settings, require_organization_user
 from backend.authorization import DocumentDecision, decide_document_access
 from backend.config import Settings
 from backend.db import Connection, connect
+from backend.pagination import PageLimit, PageOffset, page_headers
 from backend.repositories import documents as document_repository
 from backend.repositories.users import ORGANIZATION_ADMIN, SessionUser
 from backend.schemas import (
@@ -35,14 +36,20 @@ DENIAL_RESPONSES = {
 
 @router.get("", response_model=list[DocumentSummary])
 def list_documents(
+    response: Response,
+    limit: PageLimit = 50,
+    offset: PageOffset = 0,
     user: SessionUser = Depends(require_organization_user),
     settings: Settings = Depends(get_settings),
 ) -> list[DocumentSummary]:
     owner_id = None if user.role == ORGANIZATION_ADMIN else user.user_id
     with connect(settings.database_url) as conn:
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        total = document_repository.count_documents(conn, user.organization_id, owner_id)
         documents = document_repository.list_documents(
-            conn, organization_id=user.organization_id, owner_id=owner_id
+            conn, organization_id=user.organization_id, owner_id=owner_id, limit=limit, offset=offset
         )
+    page_headers(response, total, limit, offset)
     return [DocumentSummary(**asdict(document)) for document in documents]
 
 

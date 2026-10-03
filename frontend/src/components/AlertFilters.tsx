@@ -1,4 +1,3 @@
-import type { AlertSummary } from "../types/alert";
 import { ruleInfo } from "../format";
 
 export interface AlertFilterValues {
@@ -12,30 +11,13 @@ export const EMPTY_FILTERS: AlertFilterValues = { rule: "", status: "", entity: 
 
 const STATUSES = ["new", "investigating", "closed"];
 
-export function filterAlerts(alerts: AlertSummary[], filters: AlertFilterValues): AlertSummary[] {
-  const entity = filters.entity.trim().toLowerCase();
-  return alerts.filter((alert) => {
-    if (filters.rule && alert.rule_id !== filters.rule) return false;
-    if (filters.status && alert.status !== filters.status) return false;
-    if (filters.organization && alert.organization_id !== filters.organization) return false;
-    if (entity) {
-      return [alert.attempted_account, alert.actor_id].some((value) =>
-        value?.toLowerCase().includes(entity),
-      );
-    }
-    return true;
-  });
-}
-
 interface Props {
-  alerts: AlertSummary[];
   values: AlertFilterValues;
   onChange: (values: AlertFilterValues) => void;
 }
 
-export function AlertFilters({ alerts, values, onChange }: Props) {
-  const rules = distinct(alerts.map((alert) => alert.rule_id));
-  const organizations = distinct(alerts.map((alert) => alert.organization_id));
+export function AlertFilters({ values, onChange }: Props) {
+  const rules = ["R1_FAILED_LOGINS_FOLLOWED_BY_SUCCESS", "R2_REPEATED_DENIED_DOCUMENT_ACCESS"];
   const update = (field: keyof AlertFilterValues, value: string) =>
     onChange({ ...values, [field]: value });
 
@@ -65,22 +47,14 @@ export function AlertFilters({ alerts, values, onChange }: Props) {
       </label>
       <label className="field">
         Organization
-        <select
-          value={values.organization}
-          onChange={(event) => update("organization", event.target.value)}
-        >
-          <option value="">All organizations</option>
-          {organizations.map((organization) => (
-            <option key={organization} value={organization}>
-              {organization}
-            </option>
-          ))}
-        </select>
+        <input value={values.organization} maxLength={256}
+          onChange={(event) => update("organization", event.target.value)} />
       </label>
       <label className="field">
         Actor or account
         <input
           type="search"
+          maxLength={256}
           value={values.entity}
           placeholder="user-bob, alice@…"
           onChange={(event) => update("entity", event.target.value)}
@@ -91,8 +65,4 @@ export function AlertFilters({ alerts, values, onChange }: Props) {
       </button>
     </form>
   );
-}
-
-function distinct(values: (string | null)[]): string[] {
-  return [...new Set(values.filter((value): value is string => value !== null))].sort();
 }

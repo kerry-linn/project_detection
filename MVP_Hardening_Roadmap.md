@@ -161,18 +161,18 @@ R2 scaling limits. The requirements above remain the record of the intended desi
 
 ### Required local-lab hardening
 
-- [ ] Re-run the credential matrix for every new route: missing/invalid credentials, member, organization admin, analyst, write collector, and future read-only collector.
-- [ ] Preserve 403 for same-organization ownership denial and uniform 404 for foreign/nonexistent documents. Assert response bodies and evidence do not leak foreign tenant details.
-- [ ] Verify logout, expiry, changed roles, and revoked sessions through direct requests.
-- [ ] Test simultaneous ingestion of identical IDs and conflicting content. One authoritative event must remain; a conflicting batch must not partially commit.
-- [ ] Add a total request-body byte cap in addition to the existing 500-event/field limits. Test chunked bodies rather than relying only on Content-Length.
-- [ ] Bound document/note input and list/evidence responses. Add pagination to alert lists and large evidence views; keep summary counts explicit so a page is not mistaken for complete evidence.
-- [ ] Move alert filters into SQL when paginating. Filtering only the current page gives misleading results.
-- [ ] Log run/request IDs and safe error categories; test that passwords, bearer tokens, hashes, document text, and unrestricted payloads never appear in logs or exports.
-- [ ] Keep parameterized SQL, strict metadata validation, and server-assigned identity/source fields.
-- [ ] Protect reset with an explicit lab environment check and target identity confirmation as well as `--yes`. Keep test database isolation.
-- [ ] Test migrations against both an empty database and the prior schema. Document a backup/restore command and perform one restore drill before changing evidence schemas.
-- [ ] Define a lab retention policy: retain evidence referenced by active/historical cases; do not add silent automatic deletion.
+- [x] Re-run the credential matrix for every new route: missing/invalid credentials, member, organization admin, analyst, write collector, and future read-only collector.
+- [x] Preserve 403 for same-organization ownership denial and uniform 404 for foreign/nonexistent documents. Assert response bodies and evidence do not leak foreign tenant details.
+- [x] Verify logout, expiry, changed roles, and revoked sessions through direct requests.
+- [x] Test simultaneous ingestion of identical IDs and conflicting content. One authoritative event must remain; a conflicting batch must not partially commit.
+- [x] Add a total request-body byte cap in addition to the existing 500-event/field limits. Test chunked bodies rather than relying only on Content-Length.
+- [x] Bound document/note input and list/evidence responses. Add pagination to alert lists and large evidence views; keep summary counts explicit so a page is not mistaken for complete evidence.
+- [x] Move alert filters into SQL when paginating. Filtering only the current page gives misleading results.
+- [x] Log run/request IDs and safe error categories; test that passwords, bearer tokens, hashes, document text, and unrestricted payloads never appear in logs or exports.
+- [x] Keep parameterized SQL, strict metadata validation, and server-assigned identity/source fields.
+- [x] Protect reset with an explicit lab environment check and target identity confirmation as well as `--yes`. Keep test database isolation.
+- [x] Test migrations against both an empty database and the prior schema. Document a backup/restore command and perform one restore drill before changing evidence schemas.
+- [x] Define a lab retention policy: retain evidence referenced by active/historical cases; do not add silent automatic deletion.
 
 ### Conditional work before public hosting
 
@@ -184,19 +184,22 @@ If adding login throttling, define how blocked attempts appear in telemetry and 
 
 ## 9. H5 — Finish the case workflow and package the evidence
 
-- [ ] Add analyst-only status changes: `new`, `investigating`, `closed`; use a nullable disposition until a decision exists, then `benign`, `suspicious`, or `inconclusive`.
-- [ ] Require a disposition and concise rationale when closing. Define reopening behavior and retain the previous decision history.
-- [ ] Add bounded notes with server-derived author and timestamp. Record status/disposition changes in an append-only case activity table.
-- [ ] Update case state and its history in one transaction. Add a revision field or equivalent optimistic concurrency check so two analysts cannot silently overwrite one another.
-- [ ] Keep detector-owned fields separate from analyst-owned fields. A rerun must preserve status, notes, and disposition.
-- [ ] When new evidence arrives on a closed case, preserve the conclusion but surface a “new evidence requires review” indicator.
-- [ ] Explain R2's opening threshold separately from episode-wide distinct count; an extended episode can span more than five minutes.
-- [ ] Write a benign case that actually triggers an alert. The existing below-threshold benign scenarios prove no-alert behavior; they do not demonstrate triage of a false positive.
-- [ ] Complete one suspicious R1 case and one benign R2 case: hypothesis, evidence IDs, timeline, competing explanations, conclusion, missing data, and rule limitations.
-- [ ] Update the one-page threat model and known limitations. Record one actual bug, fix, and regression test.
+- [x] Add analyst-only status changes: `new`, `investigating`, `closed`; use a nullable disposition until a decision exists, then `benign`, `suspicious`, or `inconclusive`.
+- [x] Require a disposition and concise rationale when closing. Define reopening behavior and retain the previous decision history.
+- [x] Add bounded notes with server-derived author and timestamp. Record status/disposition changes in an append-only case activity table.
+- [x] Update case state and its history in one transaction. Add a revision field or equivalent optimistic concurrency check so two analysts cannot silently overwrite one another.
+- [x] Keep detector-owned fields separate from analyst-owned fields. A rerun must preserve status, notes, and disposition.
+- [x] When new evidence arrives on a closed case, preserve the conclusion but surface a “new evidence requires review” indicator.
+- [x] Explain R2's opening threshold separately from episode-wide distinct count; an extended episode can span more than five minutes.
+- [x] Write a benign case that actually triggers an alert. The existing below-threshold benign scenarios prove no-alert behavior; they do not demonstrate triage of a false positive.
+- [x] Complete one suspicious R1 case and one benign R2 case: hypothesis, evidence IDs, timeline, competing explanations, conclusion, missing data, and rule limitations.
+- [x] Update the one-page threat model and known limitations. Record one actual bug, fix, and regression test.
 - [ ] Repeat fresh-checkout acceptance and capture the 2–3 minute demo. Include a successful GitHub CI run for the final revision.
+  Local acceptance and recorded demo are complete; final hosted CI awaits publication.
 
 **Hardening release gate:** all critical access/evidence/recovery tests pass; active R2 results survive late-data correction; processing claims match implementation; a reviewer can reproduce, inspect, and disposition alerts without manual database edits.
+
+Completion evidence: [Section 4 verification and operating policy](docs/hardening_section4.md).
 
 ## 10. S1 — Splunk: reproduce and explain R1
 

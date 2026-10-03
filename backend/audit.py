@@ -28,7 +28,7 @@ def request_context(request: Request) -> RequestContext:
     proxy is configured; behind Docker this may be a bridge gateway address.
     """
     return RequestContext(
-        request_id=f"req-{uuid.uuid4()}",
+        request_id=request.state.request_id,
         source_ip=_peer_ip(request),
     )
 

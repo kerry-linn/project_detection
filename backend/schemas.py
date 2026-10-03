@@ -131,6 +131,9 @@ class AlertSummary(BaseModel):
     status: str
     detection_state: str
     needs_review: bool
+    disposition: str | None
+    rationale: str | None
+    revision: int
     organization_id: str | None
     attempted_account: str | None
     actor_id: str | None
@@ -153,3 +156,30 @@ class AlertDetail(AlertSummary):
     evidence: list[dict[str, Any]]
     replaces: list[str]
     replaced_by: list[str]
+    evidence_total: int
+    evidence_offset: int
+    evidence_limit: int
+    replaces_total: int
+    replaced_by_total: int
+
+
+class CaseDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    revision: int = Field(ge=0)
+    status: Literal["new", "investigating", "closed"]
+    disposition: Literal["benign", "suspicious", "inconclusive"] | None = None
+    rationale: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def decision_matches_status(self) -> CaseDecision:
+        if (self.status == "closed") != (self.disposition is not None):
+            raise ValueError("closed cases require a disposition; reopening clears it")
+        return self
+
+
+class CaseNote(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    revision: int = Field(ge=0)
+    body: str = Field(min_length=1, max_length=2000)

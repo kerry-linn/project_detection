@@ -259,3 +259,7 @@ td.nowrap {
   overflow-x: auto;
   font-size: 0.8rem;
 }
+
+.case-form { max-width: 720px; display: grid; gap: 0.75rem; margin: 1rem 0; }
+textarea { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); min-height: 5rem; padding: 0.5rem; }
+.case-text { white-space: pre-wrap; overflow-wrap: anywhere; }

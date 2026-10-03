@@ -68,7 +68,7 @@ def test_scenario_stops_at_the_first_unexpected_status(
 
 
 def test_reset_requires_confirmation_and_keeps_seeded_state(
-    through_app: None, database_url: str
+    through_app: None, database_url: str, monkeypatch
 ) -> None:
     generate_scenarios.main(["suspicious", "--api-url", API_URL])
     _run_rules(database_url)
@@ -77,7 +77,12 @@ def test_reset_requires_confirmation_and_keeps_seeded_state(
     assert reset_telemetry.main(args) == 2
     assert _count(database_url, "alerts") == 2
 
-    assert reset_telemetry.main([*args, "--yes"]) == 0
+    assert reset_telemetry.main([*args, "--yes"]) == 2
+    monkeypatch.setenv("LAB_ENV", "local")
+    with connect(database_url) as conn:
+        target = f"{conn.info.host}:{conn.info.port}/{conn.info.dbname}"
+    assert reset_telemetry.main([*args, "--yes", "--confirm-target", "wrong"]) == 2
+    assert reset_telemetry.main([*args, "--yes", "--confirm-target", target]) == 0
     for table in reset_telemetry.TELEMETRY_TABLES:
         assert _count(database_url, table) == 0
     assert _count(database_url, "organizations") == 2
@@ -96,3 +101,11 @@ def _run_rules(database_url: str):
 def _count(database_url: str, table: str) -> int:
     with connect(database_url) as conn:
         return conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
+
+
+def test_triage_includes_a_benign_alert_not_just_below_threshold(through_app, database_url):
+    assert generate_scenarios.main(["triage", "--api-url", API_URL]) == 0
+    assert [run.alerts_created for run in _run_rules(database_url)] == [1, 1]
+    with connect(database_url) as conn:
+        resources = conn.execute("SELECT resource_id FROM security_events WHERE event_type = 'access_denied' ORDER BY resource_id").fetchall()
+    assert [row["resource_id"] for row in resources] == [f"retired-bookmark-{index}" for index in range(1, 6)]

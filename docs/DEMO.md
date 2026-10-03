@@ -13,9 +13,9 @@ README once published.
 Complete the setup in the [README](../README.md#set-up-from-a-fresh-checkout), then:
 
 ```bash
-uvicorn backend.api:create_app --factory          # terminal 1
+uvicorn backend.api:create_app --factory --no-access-log          # terminal 1
 cd frontend && npm run dev                        # terminal 2
-python -m scripts.reset_telemetry --yes           # terminal 3: empty telemetry
+LAB_ENV=local python -m scripts.reset_telemetry --yes --confirm-target localhost:5432/security_lab           # terminal 3: empty telemetry
 ```
 
 Open http://127.0.0.1:5173 in a fresh browser window. Keep terminal 3 visible for the
@@ -44,7 +44,7 @@ To skip typing the activity, generate it through the same application routes and
 the recording at the detector step:
 
 ```bash
-python -m scripts.reset_telemetry --yes
+LAB_ENV=local python -m scripts.reset_telemetry --yes --confirm-target localhost:5432/security_lab
 python -m scripts.generate_scenarios suspicious
 ```
 
@@ -64,3 +64,19 @@ Checked against a clean database before recording (see
 - Behind the Vite proxy every event records `source_ip = 127.0.0.1`.
 
 If an extra alert appears, the telemetry was not reset before the take.
+
+
+## Section 4 recorded take
+
+The updated take uses `python -m scripts.generate_scenarios triage` after the guarded
+reset, followed by `python -m scripts.run_detection` twice. The two cases are R1
+rapid failed logins followed by success and R2's known synthetic stale-bookmark exercise.
+The recording is captioned and silent; it shows the real local UI, raw evidence,
+notes, closing both cases with rationale/disposition, append-only history, and Bob's
+403 on the analyst route. The local video is delivered separately from Git.
+
+Reproduce the take: sign in as analyst; inspect R1 and add an investigation note;
+close as suspicious without claiming compromise. Inspect R2 and record the exercise
+context; close as benign without claiming the telemetry proves intent. Sign out,
+log in as Bob, and navigate directly to `/alerts` to verify the server denies access.
+Evidence IDs and timestamps change with every scenario run.

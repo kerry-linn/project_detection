@@ -21,7 +21,7 @@ DENIED_DOCUMENT_ACCESS = "denied_document_access"
 
 SELECT_ALERT_COLUMNS = """
     alert_key, rule_id, rule_version, severity, status, detection_state,
-    needs_review, organization_id, attempted_account, actor_id, session_id,
+    needs_review, disposition, rationale, revision, organization_id, attempted_account, actor_id, session_id,
     window_start, window_end,
     threshold, window_microseconds, cooldown_microseconds, suppression_until,
     match_count, reason, created_at, updated_at
@@ -95,6 +95,9 @@ class StoredAlert:
     status: str
     detection_state: str
     needs_review: bool
+    disposition: str | None
+    rationale: str | None
+    revision: int
     organization_id: str | None
     attempted_account: str | None
     actor_id: str | None
@@ -122,6 +125,7 @@ class _PriorEpisode:
     organization_id: str
     actor_id: str
     status: str
+    needs_review: bool
     evidence_ids: set[str]
 
 
@@ -181,7 +185,7 @@ def save_alert(conn: Connection, alert: AlertRecord) -> str:
     evidence. Analyst-owned fields such as status are never overwritten.
     """
     stored = conn.execute(
-        "SELECT severity, reason FROM alerts WHERE alert_key = %s",
+        "SELECT severity, reason FROM alerts WHERE alert_key = %s FOR UPDATE",
         (alert.alert_key,),
     ).fetchone()
 
@@ -190,15 +194,21 @@ def save_alert(conn: Connection, alert: AlertRecord) -> str:
         _insert_evidence(conn, alert.alert_key, alert.evidence)
         return CREATED
 
+    previous_evidence = _load_evidence_links(conn, alert.alert_key)
     unchanged = (
         stored["severity"] == alert.severity
         and stored["reason"] == alert.reason
-        and _load_evidence_links(conn, alert.alert_key) == alert.evidence
+        and previous_evidence == alert.evidence
     )
     if unchanged:
         return UNCHANGED
 
     conn.execute(UPDATE_ALERT, _alert_params(alert))
+    conn.execute(
+        "UPDATE alerts SET revision = revision + 1, "
+        "needs_review = needs_review OR (status = 'closed' AND %s) WHERE alert_key = %s",
+        (bool(alert.evidence - previous_evidence), alert.alert_key),
+    )
     conn.execute(
         "DELETE FROM alert_events WHERE alert_key = %s", (alert.alert_key,)
     )
@@ -232,17 +242,17 @@ def get_alert(conn: Connection, alert_key: str) -> StoredAlert | None:
 
 
 def get_alert_replacements(
-    conn: Connection, alert_key: str
+    conn: Connection, alert_key: str, *, limit: int | None = None, offset: int = 0
 ) -> tuple[list[str], list[str]]:
     replacements = conn.execute(
         "SELECT new_alert_key FROM alert_replacements "
-        "WHERE old_alert_key = %s ORDER BY new_alert_key",
-        (alert_key,),
+        "WHERE old_alert_key = %s ORDER BY new_alert_key LIMIT %s OFFSET %s",
+        (alert_key, limit, offset),
     ).fetchall()
     predecessors = conn.execute(
         "SELECT old_alert_key FROM alert_replacements "
-        "WHERE new_alert_key = %s ORDER BY old_alert_key",
-        (alert_key,),
+        "WHERE new_alert_key = %s ORDER BY old_alert_key LIMIT %s OFFSET %s",
+        (alert_key, limit, offset),
     ).fetchall()
     return (
         [row["new_alert_key"] for row in replacements],
@@ -273,7 +283,7 @@ def reconcile_denied_document_alerts(
         outcome = save_alert(conn, alert)
         outcomes[outcome] += 1
         conn.execute(
-            "UPDATE alerts SET detection_state = 'active', updated_at = now() "
+            "UPDATE alerts SET detection_state = 'active', revision = revision + 1, updated_at = now() "
             "WHERE alert_key = %s AND detection_state = 'superseded'",
             (alert.alert_key,),
         )
@@ -285,7 +295,7 @@ def reconcile_denied_document_alerts(
         if not replacement_keys:
             raise ValueError(f"no replacement for R2 alert {prior_key}")
         _supersede_alert(
-            conn, prior_key, replacement_keys, needs_review=prior_episode.status == "closed"
+            conn, prior_key, replacement_keys, needs_review=prior_episode.status == "closed" or prior_episode.needs_review
         )
     return outcomes
 
@@ -293,7 +303,7 @@ def reconcile_denied_document_alerts(
 def _load_active_episodes(conn: Connection, rule: RuleRun) -> dict[str, _PriorEpisode]:
     rows = conn.execute(
         """
-        SELECT a.alert_key, a.organization_id, a.actor_id, a.status, e.event_id
+        SELECT a.alert_key, a.organization_id, a.actor_id, a.status, a.needs_review, e.event_id
         FROM alerts AS a
         LEFT JOIN alert_events AS e ON e.alert_key = a.alert_key
         WHERE a.rule_id = %s AND a.rule_version = %s
@@ -316,6 +326,7 @@ def _load_active_episodes(conn: Connection, rule: RuleRun) -> dict[str, _PriorEp
                 organization_id=row["organization_id"],
                 actor_id=row["actor_id"],
                 status=row["status"],
+                needs_review=row["needs_review"],
                 evidence_ids=set(),
             )
         if row["event_id"] is not None:
@@ -344,7 +355,7 @@ def _supersede_alert(
     needs_review: bool,
 ) -> None:
     conn.execute(
-        "UPDATE alerts SET detection_state = 'superseded', updated_at = now() "
+        "UPDATE alerts SET detection_state = 'superseded', revision = revision + 1, updated_at = now() "
         "WHERE alert_key = %s",
         (prior_key,),
     )
@@ -356,21 +367,23 @@ def _supersede_alert(
         )
         if needs_review:
             conn.execute(
-                "UPDATE alerts SET needs_review = TRUE WHERE alert_key = %s",
+                "UPDATE alerts SET needs_review = TRUE, revision = revision + 1 WHERE alert_key = %s AND NOT needs_review",
                 (replacement_key,),
             )
 
 
-def list_alert_evidence(conn: Connection, alert_key: str) -> list[EvidenceEvent]:
+def list_alert_evidence(
+    conn: Connection, alert_key: str, *, limit: int | None = None, offset: int = 0
+) -> list[EvidenceEvent]:
     rows = conn.execute(
         f"""
         SELECT evidence_role, {SELECT_EVENT_COLUMNS}
         FROM alert_events
         JOIN security_events USING (event_id)
         WHERE alert_key = %s
-        ORDER BY occurred_at, event_id
+        ORDER BY occurred_at, event_id LIMIT %s OFFSET %s
         """,
-        (alert_key,),
+        (alert_key, limit, offset),
     ).fetchall()
 
     evidence = []
@@ -400,3 +413,39 @@ def _insert_evidence(
     rows = [(alert_key, event_id, role) for event_id, role in sorted(links)]
     with conn.cursor() as cursor:
         cursor.executemany(INSERT_EVIDENCE, rows)
+
+
+def search_alerts(
+    conn: Connection, *, include_superseded: bool, rule: str | None,
+    status: str | None, organization: str | None, entity: str | None,
+    limit: int, offset: int,
+) -> tuple[list[StoredAlert], int]:
+    conditions = [] if include_superseded else ["detection_state = 'active'"]
+    params: list[object] = []
+    for column, value in (("rule_id", rule), ("status", status), ("organization_id", organization)):
+        if value:
+            conditions.append(f"{column} = %s")
+            params.append(value)
+    if entity:
+        conditions.append(
+            "(strpos(lower(COALESCE(actor_id, '')), lower(%s)) > 0 OR "
+            "strpos(lower(COALESCE(attempted_account, '')), lower(%s)) > 0)"
+        )
+        params.extend((entity.strip(), entity.strip()))
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    total = conn.execute(f"SELECT count(*) AS n FROM alerts {where}", params).fetchone()["n"]
+    rows = conn.execute(
+        f"SELECT {SELECT_ALERT_COLUMNS} FROM alerts {where} "
+        "ORDER BY window_end DESC, alert_key LIMIT %s OFFSET %s",
+        [*params, limit, offset],
+    ).fetchall()
+    return [StoredAlert(**row) for row in rows], total
+
+
+def detail_counts(conn: Connection, alert_key: str) -> dict[str, int]:
+    return conn.execute(
+        "SELECT (SELECT count(*) FROM alert_events WHERE alert_key = %s) AS evidence_total, "
+        "(SELECT count(*) FROM alert_replacements WHERE new_alert_key = %s) AS replaces_total, "
+        "(SELECT count(*) FROM alert_replacements WHERE old_alert_key = %s) AS replaced_by_total",
+        (alert_key, alert_key, alert_key),
+    ).fetchone()

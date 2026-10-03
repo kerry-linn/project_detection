@@ -16,7 +16,7 @@ interface RequestOptions {
   body?: unknown;
 }
 
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function send(path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
@@ -39,10 +39,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (!response.ok) {
     throw new ApiError(response.status, await errorMessage(response));
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
+  return response;
 }
 
 async function errorMessage(response: Response): Promise<string> {
@@ -58,4 +55,18 @@ async function errorMessage(response: Response): Promise<string> {
     // Non-JSON error bodies fall through to the generic message.
   }
   return `Request failed with status ${response.status}.`;
+}
+
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const response = await send(path, options);
+  return response.status === 204 ? undefined as T : await response.json() as T;
+}
+
+export interface Page<T> { items: T[]; total: number }
+
+export async function requestPage<T>(path: string, token: string): Promise<Page<T>> {
+  const response = await send(path, { token });
+  const items = await response.json() as T[];
+  return { items, total: Number(response.headers.get("X-Total-Count") ?? items.length) };
 }

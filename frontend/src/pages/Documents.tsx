@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { Pagination } from "../components/Pagination";
 import { Link } from "react-router";
 
 import { listDocuments } from "../api/documents";
@@ -6,11 +8,15 @@ import { formatUtc } from "../format";
 import { useApi } from "../hooks/useApi";
 
 export function DocumentsPage() {
-  const { data: documents, error, loading } = useApi(listDocuments, "documents");
+  const [offset, setOffset] = useState(0);
+  const { data: page, error, loading } = useApi((token) => listDocuments(token, offset), `documents:${offset}`);
+  const documents = page?.items;
 
   return (
     <>
       <h1>Documents</h1>
+      {page && <><p>Showing {documents?.length} of {page.total} documents</p>
+        <Pagination label="documents" offset={offset} total={page.total} onChange={setOffset} /></>}
       {loading && <Loading />}
       {error && <ErrorNotice error={error} />}
       {documents?.length === 0 && <EmptyState>No documents are visible to this account.</EmptyState>}

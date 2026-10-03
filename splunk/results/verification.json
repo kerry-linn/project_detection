@@ -1,0 +1,36 @@
+{
+  "verified": true,
+  "auxiliary_searches_verified": [
+    "account_activity",
+    "failed_logins",
+    "denied_resources",
+    "evidence"
+  ],
+  "verified_at": "2026-10-03T20:12:58.826571+00:00",
+  "splunk_version": "10.4.3",
+  "dataset_id": "section5-r1-v1",
+  "file_sha256": "9e5419ebfde2f20165a2370d3ff5a6b378364ed006122aba416185cbc0127195",
+  "event_count": 200,
+  "comparison": {
+    "matches": true,
+    "expected_alerts": 9,
+    "python_alerts": 9,
+    "splunk_alerts": 9,
+    "mismatches": []
+  },
+  "guarded_import": {
+    "state": "already_imported",
+    "raw_count": 200
+  },
+  "guarded_reimport": {
+    "state": "already_imported",
+    "raw_count": 200
+  },
+  "timestamp_precision": "all exported event times matched at integer microseconds",
+  "shuffled_input_matches": true,
+  "replay_dataset_id": "s1-replay-dfe616917b42",
+  "replay_raw_count_before": 200,
+  "replay_raw_count_after": 400,
+  "replay_results_match": true,
+  "conflicting_content_flagged": true
+}

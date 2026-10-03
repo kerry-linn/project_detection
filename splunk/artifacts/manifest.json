@@ -1,0 +1,34 @@
+{
+  "format_version": 1,
+  "dataset_id": "section5-r1-v1",
+  "event_count": 200,
+  "content_sha256": "6369c8ba12aff097a2acdb44941d36a1d67fc1f19b8fccee88eb52dbd239bf25",
+  "file_sha256": "9e5419ebfde2f20165a2370d3ff5a6b378364ed006122aba416185cbc0127195",
+  "rule_id": "R1_FAILED_LOGINS_FOLLOWED_BY_SUCCESS",
+  "rule_version": "1.0",
+  "threshold": 5,
+  "window_microseconds": 600000000,
+  "sources": [
+    {
+      "file": "days_1_2.jsonl",
+      "sha256": "6c6b8e022d72c2c1ec739d21f31fb9311107213bfb0edefef009f6642c54795a",
+      "lines": 20,
+      "accepted": 18,
+      "rejected": [
+        {
+          "line": 18,
+          "reason": "invalid JSON at column 1"
+        }
+      ],
+      "duplicates": 1
+    },
+    {
+      "file": "splunk_r1_boundaries.jsonl",
+      "sha256": "f4f6c622ed93ad6f4bdc191ee26b1604c764ac05164798bdba7486832c9aafec",
+      "lines": 183,
+      "accepted": 182,
+      "rejected": [],
+      "duplicates": 1
+    }
+  ]
+}

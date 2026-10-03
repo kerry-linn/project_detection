@@ -12,8 +12,8 @@ handling, detection engineering, Python, SQL, APIs, and security investigation.
 > access (R2). Their results are stored as deduplicated alerts linked to raw evidence and
 > exposed only to the lab analyst, who follows each alert to its supporting events in a
 > minimal React interface. A fresh checkout reproduces both detections and their benign
-> counterparts through the real application routes. The remaining v0.1 item is the
-> recorded demo.
+> counterparts through the real application routes. Section 4 adds analyst case decisions and bounded investigation reads.
+> Final hosted CI is a release gate; see the Section 4 verification record.
 
 ## Current capabilities
 
@@ -50,10 +50,13 @@ handling, detection engineering, Python, SQL, APIs, and security investigation.
 
 Release evidence:
 
+- [Section 4: suspicious R1 case](docs/investigations/section4_R1_suspicious.md)
+- [Section 4: benign triggering R2 case](docs/investigations/section4_R2_benign.md)
 - [Investigation: failed logins followed by success for Alice](docs/investigations/R1_alice_failed_logins.md)
 - [Demo recording script](docs/DEMO.md)
 - [Days 12–14: release hardening and reproducibility](docs/DAYS_12_14.md)
 - [Hardening section 1: baseline and recovery evidence](docs/hardening_baseline.md)
+- [Hardening section 4: security, case workflow, and acceptance](docs/hardening_section4.md)
 - [Hardening section 3: processing policy, benchmarks, and recovery](docs/hardening_section3.md)
 
 Walkthroughs of the code and data flow:
@@ -159,7 +162,7 @@ Seeded accounts (all use `SEED_USER_PASSWORD`):
 Start the API and the UI in two terminals:
 
 ```bash
-uvicorn backend.api:create_app --factory     # http://127.0.0.1:8000
+uvicorn backend.api:create_app --factory --no-access-log     # http://127.0.0.1:8000
 cd frontend && npm run dev                   # http://127.0.0.1:5173, proxies /api
 ```
 
@@ -167,7 +170,7 @@ In a third terminal, generate activity through the real application routes, then
 detectors:
 
 ```bash
-python -m scripts.reset_telemetry --yes             # start from empty telemetry
+LAB_ENV=local python -m scripts.reset_telemetry --yes --confirm-target localhost:5432/security_lab             # start from empty telemetry
 python -m scripts.generate_scenarios suspicious
 python -m scripts.run_detection                     # R1 created 1, R2 created 1
 python -m scripts.run_detection                     # rerun: created 0, unchanged 1 each
@@ -206,13 +209,27 @@ The benign counterpart must start from empty telemetry, otherwise the earlier al
 still listed:
 
 ```bash
-python -m scripts.reset_telemetry --yes
+LAB_ENV=local python -m scripts.reset_telemetry --yes --confirm-target localhost:5432/security_lab
 python -m scripts.generate_scenarios benign
 python -m scripts.run_detection                     # R1 and R2 both detect 0
 ```
 
 `benign` fails four logins for Alice before her success (below R1's threshold) and has
 Bob request the same document five times (one distinct document, below R2's threshold).
+
+To investigate and disposition two triggering cases, reset deliberately, then run:
+
+```bash
+python -m scripts.generate_scenarios triage
+python -m scripts.run_detection
+```
+
+This produces suspicious R1 login activity and a benign R2 stale-bookmark exercise.
+Sign in as the analyst, inspect raw evidence, add a note, and close each case with a
+disposition and rationale. Reopening preserves the old decision in history. A stale
+save returns a conflict; reload and review before retrying. New evidence on a closed
+case preserves the decision and flags it for review. All list filters run server-side;
+pages display matching/evidence totals. See the [case and pagination policy](docs/hardening_section4.md).
 
 The collector path and the file-only tools from Days 1–4 still work:
 
@@ -222,16 +239,26 @@ python -m scripts.parse_events fixtures/days_1_2.jsonl
 python -m scripts.detect_r1 fixtures/days_1_2.jsonl
 ```
 
+## Optional Splunk exercise
+
+[Section 5 setup and annotated SPL](splunk/README.md) exports 200 canonical synthetic
+events and compares full batch Python R1 against independently expected results and
+a pinned local Splunk container. It includes timestamp configuration, import replay
+protection, and a separate deliberate replay test. See [actual verification status](docs/splunk_parity.md)
+before claiming SPL parity.
+
 ## Reset
 
 | Goal | Commands |
 | --- | --- |
-| Replay a scenario from the same starting state | `python -m scripts.reset_telemetry --yes` |
+| Replay a scenario from the same starting state | `LAB_ENV=local python -m scripts.reset_telemetry --yes --confirm-target localhost:5432/security_lab` |
 | Rebuild everything from nothing | `docker compose down -v`, then the Compose, both migrate, and seed steps above |
 
-`reset_telemetry` deletes events, alerts, replacement links, evidence links, detector runs, checkpoints, and sessions from
+`reset_telemetry` deletes case history, events, alerts, replacement links, evidence links, detector runs, checkpoints, and sessions from
 the `DATABASE_URL` database and keeps the seeded organizations, users, and documents.
-Without `--yes` it only names the target database. `docker compose down -v` deletes the
+Run it without flags first to inspect the connected target. Destructive reset requires
+`LAB_ENV=local`, `--yes`, and the exact printed `host:port/database` via
+`--confirm-target`; adjust the example for your own port/database. `docker compose down -v` deletes the
 PostgreSQL volume, including the test database. Neither requires editing PostgreSQL by
 hand.
 
@@ -243,9 +270,10 @@ hand.
 - Every seeded user shares one lab password.
 - The browser keeps the session token in `sessionStorage`, not an `HttpOnly` cookie.
 - Documents are read-only in the UI; create and update exist only in the API.
-- No alert status changes, case notes, or dispositions; status is displayed only.
-- Alerts are listed and filtered in full, and `GET /security/events` has no cursor
-  pagination.
+- Case decisions and notes are analyst-only; history is append-only, but database owners
+  can bypass lab controls.
+- Lists and evidence use live offset pages; concurrent changes can shift page boundaries.
+  `GET /security/events` remains bounded but has no snapshot/cursor export.
 - R2 still scans full eligible history; R1 full initialization/backfill does too.
   Incremental R1 bounds the time span loaded per chunk, not the number of rows or
   evidence links. No scheduler is installed.
@@ -253,13 +281,15 @@ hand.
 - Unauthorized `/security/*` requests are rejected but not recorded as events, and a
   failed audit write leaves that attempt unrecorded.
 - Stored events are not tamper-proof.
-- No Splunk, AWS, R3, or R4 yet.
+- Splunk fixture/export/search tooling is available; live parity status is recorded in
+  [the Section 5 report](docs/splunk_parity.md). No AWS, R3, or R4 yet.
 
 ## What is next
 
 The current hardening plan is [the six-section timeline](MVP_Completion_Timeline.md).
 Sections 1–3 cover runner recovery, R2 late-event reconciliation, and measured
-incremental R1 processing. Section 4 is next: security and investigation workflow.
+incremental R1 processing. Section 4 implements security and investigation workflow; its final hosted CI gate
+is tracked in [the verification record](docs/hardening_section4.md).
 
 See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,
 and rule specifications. See [Project roadmap](security_project_roadmap.txt) for the

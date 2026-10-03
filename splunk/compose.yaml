@@ -1,0 +1,24 @@
+name: detection-splunk
+services:
+  splunk:
+    image: splunk/splunk:10.4.3
+    platform: linux/amd64
+    cpus: 2.0
+    mem_limit: 4g
+    environment:
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_GENERAL_TERMS: --accept-sgt-current-at-splunk-com
+      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD:?set SPLUNK_PASSWORD in splunk/.env}
+      SPLUNK_HOME_OWNERSHIP_ENFORCEMENT: "false"
+      TZ: UTC
+    ports:
+      - '127.0.0.1:18000:8000'
+    volumes:
+      - splunk_etc:/opt/splunk/etc
+      - splunk_var:/opt/splunk/var
+      - ./app:/opt/splunk/etc/apps/detection_lab:ro
+      - ./artifacts:/datasets:ro
+      - ./.runtime:/parity-runtime:ro
+volumes:
+  splunk_etc:
+  splunk_var:
