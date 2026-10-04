@@ -119,8 +119,9 @@ Live Splunk acceptance passed on the pinned 10.4.3 image; see [Section 5 status]
 
 Section 6 local acceptance: 312 backend tests with no skips, exact 200-event API
 export, a forced-kill restart, and nine matching live Splunk results.
-[Contract and evidence](docs/hardening_section6.md). Final hosted CI is pending
-publication; section 6 is not marked complete until that check passes.
+[Contract and evidence](docs/hardening_section6.md). **Section 6 complete:** both
+hosted jobs passed for final code revision `7d16da1c` in
+[run 37169171992](https://github.com/kerry-linn/project_detection/actions/runs/37169171992). All six sections have passed their required gates.
 
 ## Use this routine for every section
 

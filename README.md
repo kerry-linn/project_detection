@@ -13,8 +13,8 @@ handling, detection engineering, Python, SQL, APIs, and security investigation.
 > exposed only to the lab analyst, who follows each alert to its supporting events in a
 > minimal React interface. A fresh checkout reproduces both detections and their benign
 > counterparts through the real application routes. Section 4 adds analyst case decisions and bounded investigation reads.
-> Sections 4–5 passed hosted CI. Section 6 adds a separate machine-only snapshot export
-> and a resumable Python collector; see its verification record for the final release gate.
+> All six hardening sections passed their required checks, including hosted CI and live
+> Splunk parity. Section 6 adds machine-only snapshots and a resumable Python collector.
 
 ## Current capabilities
 
@@ -316,7 +316,7 @@ hand.
 The current hardening plan is [the six-section timeline](MVP_Completion_Timeline.md).
 Sections 1–3 cover runner recovery, R2 late-event reconciliation, and measured
 incremental R1 processing. Sections 4–5 passed their investigation and live Splunk gates.
-Section 6 export acceptance is tracked in [the verification record](docs/hardening_section6.md).
+Section 6 passed export acceptance and hosted CI; see [the verification record](docs/hardening_section6.md).
 Later work includes stateful R2, R3/R4, CloudTrail/S3, and public deployment.
 
 See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,

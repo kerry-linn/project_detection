@@ -287,7 +287,9 @@ Do not assume `(occurred_at, event_id)`, `(ingested_at, event_id)`, or a maximum
 
 Optional HEC forwarding comes later: retries can duplicate delivery, so retain event IDs and explicitly reconcile indexed output. Verify the selected Splunk product's acknowledgment support; an HTTP response alone is not a universal end-to-end delivery guarantee.
 
-A1 implementation and local/live acceptance are recorded in [Section 6](docs/hardening_section6.md). Final hosted CI remains pending publication.
+A1 is complete. Implementation, local/live acceptance, and final-code hosted CI
+(`7d16da1c`, [run 37169171992](https://github.com/kerry-linn/project_detection/actions/runs/37169171992))
+are recorded in [Section 6](docs/hardening_section6.md).
 
 ## 12. Compact regression matrix
 

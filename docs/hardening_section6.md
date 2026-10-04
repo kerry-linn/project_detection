@@ -1,7 +1,9 @@
 # Section 6: snapshot event export and resumable collector
 
 October 3, 2026 (live artifacts use October 4 UTC). Implementation and local/live
-acceptance passed. Final hosted CI remains pending publication of this revision.
+acceptance passed. Both hosted jobs passed for final code revision
+`7d16da1c64a43f7adad8c73ead714822e23bfa6c` in
+[run 37169171992](https://github.com/kerry-linn/project_detection/actions/runs/37169171992). **Section 6 is complete.**
 Sections 1–5 are complete: 231 earlier backend tests without skips, fresh setup and
 investigation scenarios, live Splunk parity, and both hosted jobs passed for `f3fe14a6`
 in [run 37150851207](https://github.com/kerry-linn/project_detection/actions/runs/37150851207).
