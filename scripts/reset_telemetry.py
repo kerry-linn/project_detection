@@ -9,7 +9,6 @@ from backend.db import Connection, connect
 
 TELEMETRY_TABLES = (
     "export_snapshot_events",
-    "export_snapshots",
     "case_activity",
     "alert_replacements",
     "alert_events",

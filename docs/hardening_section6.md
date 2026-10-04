@@ -90,9 +90,9 @@ Cleanup exclusively locks expired headers and skips active page readers, prevent
 removal between expiry checking and event reading. Event data itself remains under
 the existing lab retention policy. Telemetry reset refuses every unexpired snapshot,
 even completed ones; its snapshot-table lock prevents a concurrent creation. After
-expiry, reset clears headers and telemetry but preserves credentials/users/documents.
-Deleted snapshot continuations still return 410. Explicit destructive lab reset also
-removes initial-request tombstones; do not resume old initial requests after reset.
+expiry, reset clears membership and telemetry but preserves snapshot tombstones,
+credentials, users, and documents. Even after reset, expired initial-request retries
+and continuations return 410 and require an explicit new export.
 
 ## Collector operation
 

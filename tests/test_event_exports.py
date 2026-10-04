@@ -168,6 +168,7 @@ def test_retention_expiry_and_first_request_retry(client, reader, database_url):
     with connect(database_url) as conn:
         reset_telemetry(conn)
         assert load_events(conn) == []
+    assert get_page(client, reader, **params).status_code == 410
 
 
 def test_concurrent_initial_retries_share_one_snapshot(client, reader, database_url):
