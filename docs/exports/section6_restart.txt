@@ -1,0 +1,45 @@
+Pause original export after two committed pages (exit 2):
+
+{"elapsed_seconds":0.156,"pages":1,"records":17,"state":"collecting"}
+{"elapsed_seconds":0.168,"pages":2,"records":34,"state":"collecting"}
+{"elapsed_seconds":0.168,"pages":2,"records":34,"state":"paused"}
+
+Insert one late event, then resume the original snapshot:
+
+{"elapsed_seconds":0.045,"pages":3,"records":51,"state":"collecting"}
+{"elapsed_seconds":0.059,"pages":4,"records":68,"state":"collecting"}
+{"elapsed_seconds":0.072,"pages":5,"records":85,"state":"collecting"}
+{"elapsed_seconds":0.083,"pages":6,"records":102,"state":"collecting"}
+{"elapsed_seconds":0.101,"pages":7,"records":119,"state":"collecting"}
+{"elapsed_seconds":0.124,"pages":8,"records":136,"state":"collecting"}
+{"elapsed_seconds":0.156,"pages":9,"records":153,"state":"collecting"}
+{"elapsed_seconds":0.18,"pages":10,"records":170,"state":"collecting"}
+{"elapsed_seconds":0.202,"pages":11,"records":187,"state":"collecting"}
+{"elapsed_seconds":0.237,"pages":12,"records":200,"state":"collecting"}
+{"elapsed_seconds":0.241,"pages":12,"records":200,"state":"complete"}
+
+{"elapsed_seconds":0.025,"pages":12,"records":200,"state":"complete"}
+
+Kill a separate collector after its first committed page:
+
+SIGKILL exit -9; durable records=17
+
+{"elapsed_seconds":0.05,"pages":2,"records":34,"state":"collecting"}
+{"elapsed_seconds":0.066,"pages":3,"records":51,"state":"collecting"}
+{"elapsed_seconds":0.085,"pages":4,"records":68,"state":"collecting"}
+{"elapsed_seconds":0.101,"pages":5,"records":85,"state":"collecting"}
+{"elapsed_seconds":0.113,"pages":6,"records":102,"state":"collecting"}
+{"elapsed_seconds":0.122,"pages":7,"records":119,"state":"collecting"}
+{"elapsed_seconds":0.133,"pages":8,"records":136,"state":"collecting"}
+{"elapsed_seconds":0.144,"pages":9,"records":153,"state":"collecting"}
+{"elapsed_seconds":0.154,"pages":10,"records":170,"state":"collecting"}
+{"elapsed_seconds":0.163,"pages":11,"records":187,"state":"collecting"}
+{"elapsed_seconds":0.174,"pages":12,"records":201,"state":"collecting"}
+{"elapsed_seconds":0.178,"pages":12,"records":201,"state":"complete"}
+
+Expire a paused snapshot; resume must stop without output:
+
+{"elapsed_seconds":0.037,"pages":1,"records":17,"state":"collecting"}
+{"elapsed_seconds":0.037,"pages":1,"records":17,"state":"paused"}
+
+{"elapsed_seconds":0.038,"error":"snapshot expired or unavailable; use a new state file","state":"failed"}

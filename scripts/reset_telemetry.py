@@ -8,6 +8,8 @@ from backend.config import require_env
 from backend.db import Connection, connect
 
 TELEMETRY_TABLES = (
+    "export_snapshot_events",
+    "export_snapshots",
     "case_activity",
     "alert_replacements",
     "alert_events",
@@ -21,6 +23,9 @@ TELEMETRY_TABLES = (
 
 def reset_telemetry(conn: Connection) -> None:
     """Organizations, users, and documents are kept."""
+    conn.execute("LOCK TABLE export_snapshots IN ACCESS EXCLUSIVE MODE")
+    if conn.execute("SELECT 1 FROM export_snapshots WHERE expires_at > clock_timestamp() LIMIT 1").fetchone():
+        raise ValueError("active export snapshots prevent reset; wait until they expire")
     conn.execute(f"TRUNCATE {', '.join(TELEMETRY_TABLES)} RESTART IDENTITY")
 
 
@@ -51,7 +56,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Would delete {', '.join(TELEMETRY_TABLES)} from {target}.")
             print(f"Requires LAB_ENV=local, --yes, and --confirm-target {identity}.")
             return 2
-        reset_telemetry(conn)
+        try:
+            reset_telemetry(conn)
+        except ValueError as error:
+            print(str(error))
+            return 2
 
     print(f"Deleted {', '.join(TELEMETRY_TABLES)} from {target}.")
     return 0

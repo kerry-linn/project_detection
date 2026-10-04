@@ -1,6 +1,11 @@
 # Detection Project: MVP Hardening, Splunk, and API Automation
 
-October 1, 2026
+October 1, 2026; completion evidence updated October 3, 2026.
+
+H0–H2 checks are complete: [baseline and recovery](docs/hardening_baseline.md),
+[R2 reconciliation](docs/hardening_section2.md), and the current full regression suite.
+The initial-state descriptions below are historical; current implementation status
+is recorded in the completion notes and [timeline](MVP_Completion_Timeline.md).
 
 ## 1. Goal and scope
 
@@ -49,13 +54,13 @@ Core estimate: approximately 37–58 hours. A practical schedule is 4–6 weeks 
 
 **Purpose:** distinguish verified strengths from actual gaps.
 
-- [ ] Run existing backend tests against the dedicated test database; confirm database suites actually execute.
-- [ ] Run frontend tests, typecheck, and build; preserve the existing 401/403/404 behavior.
-- [ ] Follow the README in a clean environment: migrate, seed, suspicious scenario, both rules, rerun, reset, benign scenario.
-- [ ] Check the GitHub Actions result for the current revision. A workflow file and local commands are not proof of a successful hosted run.
-- [ ] Record revision, versions, commands, test outcomes, expected alert/evidence IDs, and known failures in `docs/hardening_baseline.md`.
-- [ ] Reproduce R2's late-arrival key change with a hand-written fixture; make the failure visible before changing the design.
-- [ ] Update stale documentation: the latest technical spec permits null-organization login groups; early Days 1–4 notes do not. Current auth uses analyst sessions, not the old static analyst token.
+- [x] Run existing backend tests against the dedicated test database; confirm database suites actually execute.
+- [x] Run frontend tests, typecheck, and build; preserve the existing 401/403/404 behavior.
+- [x] Follow the README in a clean environment: migrate, seed, suspicious scenario, both rules, rerun, reset, benign scenario.
+- [x] Check the GitHub Actions result for the current revision. A workflow file and local commands are not proof of a successful hosted run.
+- [x] Record revision, versions, commands, test outcomes, expected alert/evidence IDs, and known failures in `docs/hardening_baseline.md`.
+- [x] Reproduce R2's late-arrival key change with a hand-written fixture; make the failure visible before changing the design.
+- [x] Update stale documentation: the latest technical spec permits null-organization login groups; early Days 1–4 notes do not. Current auth uses analyst sessions, not the old static analyst token.
 
 **Done:** the current behavior can be reproduced and every remaining task is classified as fix, verify, or new capability. No new integration begins while a basic authorization or evidence-integrity regression is unresolved.
 
@@ -71,15 +76,15 @@ When checkpointing arrives, the checkpoint must commit with step 2. A checkpoint
 
 ### Add the missing failure cases
 
-- [ ] Inject failure after the first alert save, during evidence replacement, and immediately before commit. No partial alert/evidence changes should survive.
-- [ ] Test an existing alert update that fails: its previous evidence and analyst fields remain intact.
-- [ ] Kill the runner after the initial run record commits. On restart, identify the abandoned run safely.
-- [ ] If PostgreSQL is unavailable while recording failure, emit a sanitized structured log and nonzero exit status. The original row may remain `running`; do not claim every crash becomes `failed` immediately.
-- [ ] Add recovery under an exclusive runner lock. Mark an old `running` row abandoned only after establishing its worker is no longer active; age alone is insufficient. A lease/heartbeat is optional if the simpler single-worker lock is adequate.
-- [ ] Run two detectors concurrently. Define whether the second waits with a timeout or exits as busy. Confirm evidence and counts remain consistent.
-- [ ] Initially preserve the existing lock unless measurements show a problem. If replacing it with a runner advisory lock, make every detector/backfill entry point participate and test connection-loss behavior.
-- [ ] Record rule/configuration, run ID, evaluated range, loaded event count, created/updated/unchanged counts, duration, and sanitized failure category.
-- [ ] Show per-rule outcome: R1 success followed by R2 failure is partial overall success, not a single successful pipeline run.
+- [x] Inject failure after the first alert save, during evidence replacement, and immediately before commit. No partial alert/evidence changes should survive.
+- [x] Test an existing alert update that fails: its previous evidence and analyst fields remain intact.
+- [x] Kill the runner after the initial run record commits. On restart, identify the abandoned run safely.
+- [x] If PostgreSQL is unavailable while recording failure, emit a sanitized structured log and nonzero exit status. The original row may remain `running`; do not claim every crash becomes `failed` immediately.
+- [x] Add recovery under an exclusive runner lock. Mark an old `running` row abandoned only after establishing its worker is no longer active; age alone is insufficient. A lease/heartbeat is optional if the simpler single-worker lock is adequate.
+- [x] Run two detectors concurrently. Define whether the second waits with a timeout or exits as busy. Confirm evidence and counts remain consistent.
+- [x] Initially preserve the existing lock unless measurements show a problem. If replacing it with a runner advisory lock, make every detector/backfill entry point participate and test connection-loss behavior.
+- [x] Record rule/configuration, run ID, evaluated range, loaded event count, created/updated/unchanged counts, duration, and sanitized failure category.
+- [x] Show per-rule outcome: R1 success followed by R2 failure is partial overall success, not a single successful pipeline run.
 
 **Done:** retries recover without partial writes or duplicate alerts; abandoned work is visible; failure leaves processing progress unchanged. Interview explanation: “I separated run observability from atomic detector results, and tested the crash window between them.”
 
@@ -89,15 +94,15 @@ When checkpointing arrives, the checkpoint must commit with step 2. A checkpoint
 
 ### Recommended first implementation: recompute and reconcile
 
-- [ ] Keep the existing pure R2 function as the reference behavior.
-- [ ] For an affected actor/organization and rule configuration, recompute its complete available denial history first. This is deliberately conservative; it avoids inventing incomplete episode state.
-- [ ] Compare recomputed episodes with persisted episodes for that same scope. Initially do this inside the existing full-batch run if affected-entity tracking is not ready.
-- [ ] Separate “current detection result” from analyst status. Add an active/superseded detection flag and replacement links; superseded does not mean the analyst closed a case.
-- [ ] Preserve old alerts, evidence, notes, author identity, and dispositions as historical records. Hide superseded results from the default active list but make replacement history inspectable.
-- [ ] Use shared evidence and full recomputation to establish replacement relationships. Permit multiple old alerts to point to a merged result. Do not merge merely because timestamps overlap.
-- [ ] If a replacement inherits conflicting analyst conclusions, retain both histories and mark the current result as needing review. Do not silently choose one conclusion.
-- [ ] Commit new results, replacement links, and supersession together. Never supersede alerts outside the evaluated entity/configuration or from a partial history.
-- [ ] Preserve idempotency: running reconciliation twice produces the same active set and no extra history entries.
+- [x] Keep the existing pure R2 function as the reference behavior.
+- [x] For an affected actor/organization and rule configuration, recompute its complete available denial history first. This is deliberately conservative; it avoids inventing incomplete episode state.
+- [x] Compare recomputed episodes with persisted episodes for that same scope. Initially do this inside the existing full-batch run if affected-entity tracking is not ready.
+- [x] Separate “current detection result” from analyst status. Add an active/superseded detection flag and replacement links; superseded does not mean the analyst closed a case.
+- [x] Preserve old alerts, evidence, notes, author identity, and dispositions as historical records. Hide superseded results from the default active list but make replacement history inspectable.
+- [x] Use shared evidence and full recomputation to establish replacement relationships. Permit multiple old alerts to point to a merged result. Do not merge merely because timestamps overlap.
+- [x] If a replacement inherits conflicting analyst conclusions, retain both histories and mark the current result as needing review. Do not silently choose one conclusion.
+- [x] Commit new results, replacement links, and supersession together. Never supersede alerts outside the evaluated entity/configuration or from a partial history.
+- [x] Preserve idempotency: running reconciliation twice produces the same active set and no extra history entries.
 
 ### Required fixtures
 
@@ -194,8 +199,8 @@ If adding login throttling, define how blocked attempts appear in telemetry and 
 - [x] Write a benign case that actually triggers an alert. The existing below-threshold benign scenarios prove no-alert behavior; they do not demonstrate triage of a false positive.
 - [x] Complete one suspicious R1 case and one benign R2 case: hypothesis, evidence IDs, timeline, competing explanations, conclusion, missing data, and rule limitations.
 - [x] Update the one-page threat model and known limitations. Record one actual bug, fix, and regression test.
-- [ ] Repeat fresh-checkout acceptance and capture the 2–3 minute demo. Include a successful GitHub CI run for the final revision.
-  Local acceptance and recorded demo are complete; final hosted CI awaits publication.
+- [x] Repeat fresh-checkout acceptance and capture the 2–3 minute demo. Include a successful GitHub CI run for the final revision.
+  Clean acceptance and the recorded demo passed; `f3fe14a6` passed [GitHub Actions run 37150851207](https://github.com/kerry-linn/project_detection/actions/runs/37150851207).
 
 **Hardening release gate:** all critical access/evidence/recovery tests pass; active R2 results survive late-data correction; processing claims match implementation; a reviewer can reproduce, inspect, and disposition alerts without manual database edits.
 
@@ -233,14 +238,14 @@ Use Splunk's documented time-window commands as implementation building blocks, 
 
 ## 11. A1 — API automation: reliable paginated event export
 
-**Goal:** a Python read-only client that can stop, retry, and resume without losing or duplicating exported events within its declared dataset semantics. This collector reads `/security/events`; it is distinct from the existing write-ingestion collector.
+**Goal:** a Python read-only client that can stop, retry, and resume without losing or duplicating exported events within its declared dataset semantics. This collector reads the separate `/security/events/export` route; it is distinct from the existing write-ingestion collector.
 
 ### A1a. Credential and API contract
 
-- [ ] Add a separately scoped machine credential for event reads only, with hashed secret storage, revocation, and an expiry/rotation procedure.
-- [ ] Prove it cannot write events, read documents, change cases, or inherit the analyst's entire role.
-- [ ] Return `items`, `next_cursor`, and a snapshot/export identifier. Validate page limits and cursor shape; bind cursors to the original filter set and authorization scope.
-- [ ] Keep deterministic keyset ordering and a tie-breaker. An offset is fragile when rows arrive during collection.
+- [x] Add a separately scoped machine credential for event reads only, with hashed secret storage, revocation, and an expiry/rotation procedure.
+- [x] Prove it cannot write events, read documents, change cases, or inherit the analyst's entire role.
+- [x] Return `items`, `next_cursor`, and a snapshot/export identifier. Validate page limits and cursor shape; bind cursors to the original filter set and authorization scope.
+- [x] Keep deterministic keyset ordering and a tie-breaker. An offset is fragile when rows arrive during collection.
 
 ### Recommended first snapshot design
 
@@ -252,15 +257,15 @@ Do not assume `(occurred_at, event_id)`, `(ingested_at, event_id)`, or a maximum
 
 ### A1b. Client behavior
 
-- [ ] Configure base URL, credential, filters, page size, connect/read timeouts, output, and resume state.
-- [ ] Use bounded exponential backoff with jitter for transient connection failures and selected 5xx responses; honor valid `Retry-After` on 429 within a maximum wait/retry budget.
-- [ ] Stop on 401/403 with a clear message. Do not repeatedly retry malformed payloads, permanent 4xx responses, or expired snapshots.
-- [ ] Validate every page, required fields, duplicate/conflicting event IDs, and cursor progress; reject a repeated cursor rather than loop forever.
-- [ ] Store received events keyed by `event_id` and the next cursor in one local SQLite transaction. SQLite is a lightweight checkpoint/output staging file here, not another deployed service.
-- [ ] On restart, resume that snapshot/cursor. A crash before commit re-fetches the page; a crash after commit resumes the next one.
-- [ ] Generate JSONL/CSV from staging after collection; write to a temporary file and atomically rename it. Include a manifest with filters, snapshot, count, and completion status.
-- [ ] Keep original raw values in JSONL. If exporting spreadsheet-oriented CSV, neutralize formula-leading cells and document that display transformation.
-- [ ] Print pages, records, retries, elapsed time, and final state without logging credentials.
+- [x] Configure base URL, credential, filters, page size, connect/read timeouts, output, and resume state.
+- [x] Use bounded exponential backoff with jitter for transient connection failures and selected 5xx responses; honor valid `Retry-After` on 429 within a maximum wait/retry budget.
+- [x] Stop on 401/403 with a clear message. Do not repeatedly retry malformed payloads, permanent 4xx responses, or expired snapshots.
+- [x] Validate every page, required fields, duplicate/conflicting event IDs, and cursor progress; reject a repeated cursor rather than loop forever.
+- [x] Store received events keyed by `event_id` and the next cursor in one local SQLite transaction. SQLite is a lightweight checkpoint/output staging file here, not another deployed service.
+- [x] On restart, resume that snapshot/cursor. A crash before commit re-fetches the page; a crash after commit resumes the next one.
+- [x] Generate JSONL/CSV from staging after collection; write to a temporary file and atomically rename it. Include a manifest with filters, snapshot, count, and completion status.
+- [x] Keep original raw values in JSONL. If exporting spreadsheet-oriented CSV, neutralize formula-leading cells and document that display transformation.
+- [x] Print pages, records, retries, elapsed time, and final state without logging credentials.
 
 ### A1c. Required acceptance tests
 
@@ -281,6 +286,8 @@ Do not assume `(occurred_at, event_id)`, `(ingested_at, event_id)`, or a maximum
 **Done:** compare exported event IDs and canonical content with the server snapshot, not only row counts. Feed the resulting JSONL into the same Splunk parity exercise.
 
 Optional HEC forwarding comes later: retries can duplicate delivery, so retain event IDs and explicitly reconcile indexed output. Verify the selected Splunk product's acknowledgment support; an HTTP response alone is not a universal end-to-end delivery guarantee.
+
+A1 implementation and local/live acceptance are recorded in [Section 6](docs/hardening_section6.md). Final hosted CI remains pending publication.
 
 ## 12. Compact regression matrix
 

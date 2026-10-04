@@ -137,6 +137,21 @@ The auxiliary queries cover account timelines, failures by account/IP, denied
 resources by actor, and raw evidence by ID. They assume the import/content validation
 has passed. Edit the example account/evidence IDs as needed; retain the dataset scope.
 
+## Reuse the Section 6 API export
+
+The same fixture expectations can verify a completed collector export of the 200-event
+fixture dataset. Keep results separate from the original Section 5 run:
+
+```bash
+python -m scripts.splunk_dataset export docs/exports/section6_events.jsonl --output splunk/.runtime/section6-api-bundle --dataset-id section6-api-example
+python -m scripts.splunk_lab verify --bundle splunk/.runtime/section6-api-bundle --results splunk/results/section6
+```
+
+`--bundle` must be inside the mounted `splunk/artifacts` or `splunk/.runtime` directory.
+This verification uses the existing independent fixture expectations; an arbitrary
+application export needs its own expected results. [Section 6 evidence](../docs/hardening_section6.md)
+records the live API-export comparison already performed.
+
 ## Results and cleanup
 
 `results/r1.json` saves actual SPL rows. `results/verification.json` records version,

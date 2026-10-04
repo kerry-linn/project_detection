@@ -13,7 +13,8 @@ handling, detection engineering, Python, SQL, APIs, and security investigation.
 > exposed only to the lab analyst, who follows each alert to its supporting events in a
 > minimal React interface. A fresh checkout reproduces both detections and their benign
 > counterparts through the real application routes. Section 4 adds analyst case decisions and bounded investigation reads.
-> Final hosted CI is a release gate; see the Section 4 verification record.
+> Sections 4–5 passed hosted CI. Section 6 adds a separate machine-only snapshot export
+> and a resumable Python collector; see its verification record for the final release gate.
 
 ## Current capabilities
 
@@ -36,8 +37,10 @@ handling, detection engineering, Python, SQL, APIs, and security investigation.
 - Optional incremental R1 with overlapping event-time windows, atomic checkpoints,
   delayed-commit reporting, and an explicit full-history backfill path
 - Alert-to-event evidence links and a recorded history of detector runs
-- Three separate trust domains: application sessions, lab-analyst sessions, and a
-  collector credential
+- Separate credentials for application users, lab analysts, write ingestion, and
+  read-only event export
+- Frozen 24-hour event snapshots and a Python collector with SQLite page checkpoints,
+  bounded retries, JSONL/CSV output, and completion manifests
 - Behavioral, persistence, API, and authorization tests against real PostgreSQL,
   including cross-user, cross-organization, admin-scope, analyst-only, and benign
   below-threshold cases
@@ -57,6 +60,8 @@ Release evidence:
 - [Days 12–14: release hardening and reproducibility](docs/DAYS_12_14.md)
 - [Hardening section 1: baseline and recovery evidence](docs/hardening_baseline.md)
 - [Hardening section 4: security, case workflow, and acceptance](docs/hardening_section4.md)
+- [Section 5: verified live Splunk parity](docs/splunk_parity.md)
+- [Section 6: snapshot export, collector, and restart evidence](docs/hardening_section6.md)
 - [Hardening section 3: processing policy, benchmarks, and recovery](docs/hardening_section3.md)
 
 Walkthroughs of the code and data flow:
@@ -247,6 +252,25 @@ a pinned local Splunk container. It includes timestamp configuration, import rep
 protection, and a separate deliberate replay test. See [actual verification status](docs/splunk_parity.md)
 before claiming SPL parity.
 
+## Read-only event export
+
+Apply migrations, then create a separately managed `event_export` credential:
+
+```bash
+python -m scripts.migrate
+mkdir -p .exports
+python -m scripts.export_credentials create --name local-export --days 30 --output .exports/token
+export EVENT_EXPORT_TOKEN="$(cat .exports/token)"
+python -m scripts.collect_events --state .exports/run.sqlite --output .exports/events.jsonl --page-size 100
+```
+
+Run the API first. Repeat the exact collector command to resume an interrupted run.
+Use a **new state file** for a new snapshot; expiry after 24 hours requires that explicit
+choice. Credentials read event fields across the lab's organizations and have no
+other authenticated privilege. The analyst's `GET /security/events` array is unchanged.
+See [Section 6](docs/hardening_section6.md) for filters, credential rotation/revocation,
+CSV, retry limits, manifests, and a recorded forced-kill restart.
+
 ## Reset
 
 | Goal | Commands |
@@ -255,7 +279,8 @@ before claiming SPL parity.
 | Rebuild everything from nothing | `docker compose down -v`, then the Compose, both migrate, and seed steps above |
 
 `reset_telemetry` deletes case history, events, alerts, replacement links, evidence links, detector runs, checkpoints, and sessions from
-the `DATABASE_URL` database and keeps the seeded organizations, users, and documents.
+the `DATABASE_URL` database and keeps the seeded organizations, users, documents, and export credentials. Active export snapshots block reset until
+their 24-hour expiry; completed collectors still retain that server-side protection.
 Run it without flags first to inspect the connected target. Destructive reset requires
 `LAB_ENV=local`, `--yes`, and the exact printed `host:port/database` via
 `--confirm-target`; adjust the example for your own port/database. `docker compose down -v` deletes the
@@ -273,7 +298,9 @@ hand.
 - Case decisions and notes are analyst-only; history is append-only, but database owners
   can bypass lab controls.
 - Lists and evidence use live offset pages; concurrent changes can shift page boundaries.
-  `GET /security/events` remains bounded but has no snapshot/cursor export.
+  `GET /security/events` remains bounded; frozen export uses the separate machine-only
+  `/security/events/export` route. Snapshots materialize IDs, consume storage proportional
+  to event count, and have no per-credential concurrency quota.
 - R2 still scans full eligible history; R1 full initialization/backfill does too.
   Incremental R1 bounds the time span loaded per chunk, not the number of rows or
   evidence links. No scheduler is installed.
@@ -288,8 +315,9 @@ hand.
 
 The current hardening plan is [the six-section timeline](MVP_Completion_Timeline.md).
 Sections 1–3 cover runner recovery, R2 late-event reconciliation, and measured
-incremental R1 processing. Section 4 implements security and investigation workflow; its final hosted CI gate
-is tracked in [the verification record](docs/hardening_section4.md).
+incremental R1 processing. Sections 4–5 passed their investigation and live Splunk gates.
+Section 6 export acceptance is tracked in [the verification record](docs/hardening_section6.md).
+Later work includes stateful R2, R3/R4, CloudTrail/S3, and public deployment.
 
 See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,
 and rule specifications. See [Project roadmap](security_project_roadmap.txt) for the

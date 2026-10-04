@@ -169,3 +169,10 @@ def test_completed_interrupted_import_recovers_without_resubmit(monkeypatch, tmp
     monkeypatch.setattr(splunk_lab, 'submit', lambda *args: pytest.fail('must not resubmit'))
     assert splunk_lab.guarded_import()['state'] == 'already_imported'
     assert not pending.exists()
+
+
+def test_api_export_bundle_uses_the_runtime_mount(tmp_path):
+    assert splunk_lab.container_bundle_path(BUNDLE) == '/datasets/events.jsonl'
+    assert splunk_lab.container_bundle_path(splunk_lab.RUNTIME / 'api-export') == '/parity-runtime/api-export/events.jsonl'
+    with pytest.raises(ValueError, match='bundle must be inside'):
+        splunk_lab.container_bundle_path(tmp_path)

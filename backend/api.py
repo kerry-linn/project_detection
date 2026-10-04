@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from backend.http_safety import RequestSafety
 
 from backend.config import Settings, load_settings
-from backend.routes import auth, documents, ingestion, security
+from backend.routes import auth, documents, exports, ingestion, security
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -23,6 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(documents.router)
     app.include_router(ingestion.router)
+    app.include_router(exports.router)
     app.include_router(security.router)
 
     @app.get("/health")

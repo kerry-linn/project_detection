@@ -1,0 +1,7 @@
+{
+  "matches": true,
+  "expected_alerts": 9,
+  "python_alerts": 9,
+  "splunk_alerts": 9,
+  "mismatches": []
+}

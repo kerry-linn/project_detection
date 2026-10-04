@@ -28,6 +28,7 @@ from detections.denied_document_access import detect_repeated_denied_document_ac
 from detections.common import deduplicate_and_sort
 from detections.failed_login_success import FailedLoginSuccessConfig, _build_alert, detect_failed_logins_followed_by_success
 from security_events import SecurityEvent
+from scripts.reset_telemetry import reset_telemetry
 
 SEED = 3101
 END = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -191,7 +192,8 @@ def verify_persisted_parity(conn) -> int:
         evidence.setdefault(link["alert_key"], set()).add((link["event_id"], link["evidence_role"]))
     for alert in list_alerts(conn):
         row = asdict(alert)
-        for field in ("status", "detection_state", "needs_review", "created_at", "updated_at"):
+        for field in ("status", "detection_state", "needs_review", "created_at", "updated_at",
+                      "disposition", "rationale", "revision"):
             del row[field]
         row["evidence"] = frozenset(evidence[alert.alert_key])
         actual[alert.alert_key] = row
@@ -231,7 +233,7 @@ def main() -> None:
             conn.commit()
             for size in args.sizes:
                 for distribution in ("many", "hot"):
-                    conn.execute("TRUNCATE security_events, alerts, alert_events, alert_replacements, detection_runs, detection_checkpoints")
+                    reset_telemetry(conn)
                     conn.execute("DROP INDEX IF EXISTS security_events_r1_visibility_idx")
                     copy_events(conn, synthetic_events(size, distribution))
                     conn.execute("ANALYZE security_events")

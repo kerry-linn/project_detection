@@ -1,0 +1,26 @@
+[
+  {
+    "organization_id": "org-alpha",
+    "actor_key": "user-bob",
+    "resource_type": "alert",
+    "resource_key": "alert-001",
+    "denials": "1",
+    "event_ids": "evt-020"
+  },
+  {
+    "organization_id": "org-alpha",
+    "actor_key": "user-bob",
+    "resource_type": "document",
+    "resource_key": "document-101",
+    "denials": "1",
+    "event_ids": "evt-012"
+  },
+  {
+    "organization_id": "org-alpha",
+    "actor_key": "user-bob",
+    "resource_type": "document",
+    "resource_key": "document-102",
+    "denials": "1",
+    "event_ids": "evt-013"
+  }
+]

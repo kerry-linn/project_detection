@@ -94,5 +94,9 @@ There is no R2 SPL, automatic forwarding, or API export collector in Section 5.
 
 See [setup and the annotated SPL explanation](../splunk/README.md), including the
 601-second candidate window, the exact 600-second final boundary, and why fixed
-ten-minute buckets differ. Section 4's hosted CI gate still awaits publication and
-a successful run for the final revision.
+ten-minute buckets differ. Sections 4–5 passed hosted backend/frontend CI for
+`f3fe14a6` in [GitHub Actions run 37150851207](https://github.com/kerry-linn/project_detection/actions/runs/37150851207).
+
+Section 6 repeated this live exercise using completed API-collector JSONL; all
+200 events and nine R1 results matched. See [the export report](hardening_section6.md)
+and `splunk/results/section6/verification.json`.

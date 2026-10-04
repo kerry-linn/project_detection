@@ -85,10 +85,8 @@ Commands: `.venv/bin/python -m pytest --tb=short`; `npm ci`; `npm test`;
 `npm run typecheck`; `npm run build`; the README migrate/seed/scenario commands
 against the isolated targets.
 
-Hosted CI remains a release gate until the final changes are committed and published.
-The latest verified hosted success at inspection was
-[run 36913505570](https://github.com/kerry-linn/project_detection/actions/runs/36913505570)
-for `5903ee16`, not this working tree or starting revision `3db1665`.
+Hosted release gate passed for published revision `f3fe14a6e3e061f1727f23853d8400ae57962a0e`: both backend and frontend jobs succeeded in
+[GitHub Actions run 37150851207](https://github.com/kerry-linn/project_detection/actions/runs/37150851207).
 
 October 3 revalidation: Docker was recovered without deleting volumes. The current
 backend suite passed **231 tests with no skips**. A separate source copy and fresh

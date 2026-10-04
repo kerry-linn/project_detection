@@ -137,8 +137,19 @@ def import_lock():
         yield
 
 
-def guarded_import() -> dict:
-    manifest, records = load_bundle(BUNDLE)
+def container_bundle_path(bundle: Path) -> str:
+    path = (bundle / 'events.jsonl').resolve()
+    for host, container in ((BUNDLE, '/datasets'), (RUNTIME, '/parity-runtime')):
+        try:
+            return container + '/' + path.relative_to(host.resolve()).as_posix()
+        except ValueError:
+            pass
+    raise ValueError('bundle must be inside splunk/artifacts or splunk/.runtime')
+
+
+def guarded_import(bundle: Path = BUNDLE) -> dict:
+    manifest, records = load_bundle(bundle)
+    source_path = container_bundle_path(bundle)
     dataset_id = manifest['dataset_id']
     selection(MAIN_INDEX, dataset_id)
     with import_lock():
@@ -151,7 +162,7 @@ def guarded_import() -> dict:
         if pending.exists():
             raise SplunkError('an earlier import has an unresolved outcome; inspect it before using a new dataset ID')
         write_json(pending, manifest)
-        submit('/datasets/events.jsonl', MAIN_INDEX)
+        submit(source_path, MAIN_INDEX)
         rows = wait_indexed(MAIN_INDEX, dataset_id, len(records))
         check_indexed(rows, records)
         pending.unlink()
@@ -168,29 +179,29 @@ def r1(index: str, dataset_id: str) -> list[dict]:
     return run_saved('r1_failed_login_success.spl', index, dataset_id)
 
 
-def verify() -> dict:
-    manifest, records = load_bundle(BUNDLE)
+def verify(bundle: Path = BUNDLE, results: Path = SPLUNK / 'results') -> dict:
+    manifest, records = load_bundle(bundle)
     expected = json.loads(EXPECTED.read_text())['alerts']
-    write_json(SPLUNK / 'results' / 'verification.json',
+    write_json(results / 'verification.json',
                {'verified': False, 'state': 'in_progress', 'dataset_id': manifest['dataset_id']})
     version = json.loads(request('/services/server/info', {}, 'GET'))['entry'][0]['content']['version']
     if version != '10.4.3':
         raise SplunkError('verification requires the pinned Splunk 10.4.3 version')
-    first = guarded_import()
-    second = guarded_import()
+    first = guarded_import(bundle)
+    second = guarded_import(bundle)
     if first['raw_count'] != second['raw_count'] or second['state'] != 'already_imported':
         raise SplunkError('guarded replay changed indexed counts')
     original = r1(MAIN_INDEX, manifest['dataset_id'])
     comparison = compare_results(records, expected, original)
-    write_json(SPLUNK / 'results' / 'comparison.json', comparison)
-    write_json(SPLUNK / 'results' / 'r1.json', original)
+    write_json(results / 'comparison.json', comparison)
+    write_json(results / 'r1.json', original)
     if not comparison['matches']:
         raise SplunkError('Splunk/Python/expected comparison failed; see results/comparison.json')
 
     auxiliary = {}
     for name in ('account_activity', 'failed_logins', 'denied_resources', 'evidence'):
         result = run_saved(name + '.spl', MAIN_INDEX, manifest['dataset_id'])
-        write_json(SPLUNK / 'results' / (name + '.json'), result)
+        write_json(results / (name + '.json'), result)
         auxiliary[name] = result
     account_ids = [r['event_id'] for r in records if r['attempted_account'] == 'alice@example.test']
     if [r['event_id'] for r in auxiliary['account_activity']] != account_ids:
@@ -220,7 +231,7 @@ def verify() -> dict:
     replay_results = r1(REPLAY_INDEX, replay_id)
     if normalize_results(replay_results) != normalize_results(original):
         raise SplunkError('deliberate replay changed R1 results')
-    write_json(SPLUNK / 'results' / 'r1_replay.json', replay_results)
+    write_json(results / 'r1_replay.json', replay_results)
 
     conflict = dict(replay_records[0], source_ip='192.0.2.99')
     conflict_file = RUNTIME / f'{replay_id}-conflict.jsonl'
@@ -231,7 +242,7 @@ def verify() -> dict:
     if (not any(row.get('error') == 'conflicting_event_id' for row in conflict_results)
             or any(row.get('result_type') != 'error' for row in conflict_results)):
         raise SplunkError('SPL did not flag a conflicting event ID')
-    write_json(SPLUNK / 'results' / 'conflict.json', conflict_results)
+    write_json(results / 'conflict.json', conflict_results)
     report = {'verified': True, 'auxiliary_searches_verified': list(auxiliary), 'verified_at': datetime.now(timezone.utc).isoformat(), 'splunk_version': version,
               'dataset_id': manifest['dataset_id'], 'file_sha256': manifest['file_sha256'],
               'event_count': len(records), 'comparison': comparison,
@@ -240,21 +251,23 @@ def verify() -> dict:
               'shuffled_input_matches': True, 'replay_dataset_id': replay_id,
               'replay_raw_count_before': len(records), 'replay_raw_count_after': len(rows),
               'replay_results_match': True, 'conflicting_content_flagged': True}
-    write_json(SPLUNK / 'results' / 'verification.json', report)
+    write_json(results / 'verification.json', report)
     return report
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Import and verify the isolated local Splunk fixture')
     parser.add_argument('command', choices=('import', 'verify'))
+    parser.add_argument('--bundle', type=Path, default=BUNDLE)
+    parser.add_argument('--results', type=Path, default=SPLUNK / 'results')
     args = parser.parse_args(argv)
     try:
-        report = guarded_import() if args.command == 'import' else verify()
+        report = guarded_import(args.bundle) if args.command == 'import' else verify(args.bundle, args.results)
         print(json.dumps(report, indent=2))
         return 0
     except (SplunkError, ValueError, KeyError, OSError) as error:
         if args.command == 'verify':
-            write_json(SPLUNK / 'results' / 'verification.json',
+            write_json(args.results / 'verification.json',
                        {'verified': False, 'state': 'failed', 'error': str(error)})
         print(json.dumps({'error': str(error)}))
         return 1

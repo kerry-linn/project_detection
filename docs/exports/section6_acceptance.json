@@ -1,0 +1,24 @@
+{
+  "database": "section6_7b77c350_test",
+  "migrations": [
+    "001_initial",
+    "002_application",
+    "003_run_recovery",
+    "004_r2_reconciliation",
+    "005_r1_checkpoints",
+    "006_r1_visibility_index",
+    "007_case_workflow",
+    "008_event_exports"
+  ],
+  "source_event_count": 200,
+  "exported_event_count": 200,
+  "snapshot_id": "8535bf86-d122-426b-af84-1a48d0311047",
+  "exact_ids_and_content_match": true,
+  "late_event_excluded": true,
+  "next_snapshot_count": 201,
+  "killed_process_exit": -9,
+  "durable_records_at_kill": 17,
+  "resumed_killed_export_count": 201,
+  "expired_snapshot_stopped": true,
+  "csv_exported": true
+}

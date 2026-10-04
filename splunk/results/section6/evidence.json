@@ -1,0 +1,56 @@
+[
+  {
+    "occurred_at": "2026-09-17T12:50:00.000000Z",
+    "event_id": "evt-004",
+    "event_type": "login_failed",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "source_ip": "198.51.100.40",
+    "_raw": "{\"actor_id\":\"user-alice\",\"attempted_account\":\"alice@example.test\",\"dataset_content_sha256\":\"6369c8ba12aff097a2acdb44941d36a1d67fc1f19b8fccee88eb52dbd239bf25\",\"dataset_id\":\"section6-api-0b20a97bcd63\",\"event_id\":\"evt-004\",\"event_type\":\"login_failed\",\"ingested_at\":\"2026-09-17T12:50:01.000000Z\",\"metadata\":{},\"new_role\":null,\"occurred_at\":\"2026-09-17T12:50:00.000000Z\",\"organization_id\":\"org-alpha\",\"outcome\":\"failure\",\"previous_role\":null,\"request_id\":\"request-004\",\"resource_id\":null,\"resource_type\":null,\"schema_version\":\"1.0\",\"session_id\":null,\"source\":\"fixture\",\"source_ip\":\"198.51.100.40\",\"target_actor_id\":null}"
+  },
+  {
+    "occurred_at": "2026-09-17T12:52:00.000000Z",
+    "event_id": "evt-005",
+    "event_type": "login_failed",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "source_ip": "198.51.100.40",
+    "_raw": "{\"actor_id\":\"user-alice\",\"attempted_account\":\"alice@example.test\",\"dataset_content_sha256\":\"6369c8ba12aff097a2acdb44941d36a1d67fc1f19b8fccee88eb52dbd239bf25\",\"dataset_id\":\"section6-api-0b20a97bcd63\",\"event_id\":\"evt-005\",\"event_type\":\"login_failed\",\"ingested_at\":\"2026-09-17T12:52:01.000000Z\",\"metadata\":{},\"new_role\":null,\"occurred_at\":\"2026-09-17T12:52:00.000000Z\",\"organization_id\":\"org-alpha\",\"outcome\":\"failure\",\"previous_role\":null,\"request_id\":\"request-005\",\"resource_id\":null,\"resource_type\":null,\"schema_version\":\"1.0\",\"session_id\":null,\"source\":\"fixture\",\"source_ip\":\"198.51.100.40\",\"target_actor_id\":null}"
+  },
+  {
+    "occurred_at": "2026-09-17T12:54:00.000000Z",
+    "event_id": "evt-006",
+    "event_type": "login_failed",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "source_ip": "198.51.100.41",
+    "_raw": "{\"actor_id\":\"user-alice\",\"attempted_account\":\"alice@example.test\",\"dataset_content_sha256\":\"6369c8ba12aff097a2acdb44941d36a1d67fc1f19b8fccee88eb52dbd239bf25\",\"dataset_id\":\"section6-api-0b20a97bcd63\",\"event_id\":\"evt-006\",\"event_type\":\"login_failed\",\"ingested_at\":\"2026-09-17T12:54:01.000000Z\",\"metadata\":{},\"new_role\":null,\"occurred_at\":\"2026-09-17T12:54:00.000000Z\",\"organization_id\":\"org-alpha\",\"outcome\":\"failure\",\"previous_role\":null,\"request_id\":\"request-006\",\"resource_id\":null,\"resource_type\":null,\"schema_version\":\"1.0\",\"session_id\":null,\"source\":\"fixture\",\"source_ip\":\"198.51.100.41\",\"target_actor_id\":null}"
+  },
+  {
+    "occurred_at": "2026-09-17T12:56:00.000000Z",
+    "event_id": "evt-007",
+    "event_type": "login_failed",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "source_ip": "198.51.100.41",
+    "_raw": "{\"actor_id\":\"user-alice\",\"attempted_account\":\"alice@example.test\",\"dataset_content_sha256\":\"6369c8ba12aff097a2acdb44941d36a1d67fc1f19b8fccee88eb52dbd239bf25\",\"dataset_id\":\"section6-api-0b20a97bcd63\",\"event_id\":\"evt-007\",\"event_type\":\"login_failed\",\"ingested_at\":\"2026-09-17T12:56:01.000000Z\",\"metadata\":{},\"new_role\":null,\"occurred_at\":\"2026-09-17T12:56:00.000000Z\",\"organization_id\":\"org-alpha\",\"outcome\":\"failure\",\"previous_role\":null,\"request_id\":\"request-007\",\"resource_id\":null,\"resource_type\":null,\"schema_version\":\"1.0\",\"session_id\":null,\"source\":\"fixture\",\"source_ip\":\"198.51.100.41\",\"target_actor_id\":null}"
+  },
+  {
+    "occurred_at": "2026-09-17T12:59:00.000000Z",
+    "event_id": "evt-008",
+    "event_type": "login_failed",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "source_ip": "198.51.100.42",
+    "_raw": "{\"actor_id\":\"user-alice\",\"attempted_account\":\"alice@example.test\",\"dataset_content_sha256\":\"6369c8ba12aff097a2acdb44941d36a1d67fc1f19b8fccee88eb52dbd239bf25\",\"dataset_id\":\"section6-api-0b20a97bcd63\",\"event_id\":\"evt-008\",\"event_type\":\"login_failed\",\"ingested_at\":\"2026-09-17T12:59:01.000000Z\",\"metadata\":{},\"new_role\":null,\"occurred_at\":\"2026-09-17T12:59:00.000000Z\",\"organization_id\":\"org-alpha\",\"outcome\":\"failure\",\"previous_role\":null,\"request_id\":\"request-008\",\"resource_id\":null,\"resource_type\":null,\"schema_version\":\"1.0\",\"session_id\":null,\"source\":\"fixture\",\"source_ip\":\"198.51.100.42\",\"target_actor_id\":null}"
+  },
+  {
+    "occurred_at": "2026-09-17T13:00:00.000000Z",
+    "event_id": "evt-009",
+    "event_type": "login_succeeded",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test",
+    "source_ip": "198.51.100.42",
+    "_raw": "{\"actor_id\":\"user-alice\",\"attempted_account\":\"alice@example.test\",\"dataset_content_sha256\":\"6369c8ba12aff097a2acdb44941d36a1d67fc1f19b8fccee88eb52dbd239bf25\",\"dataset_id\":\"section6-api-0b20a97bcd63\",\"event_id\":\"evt-009\",\"event_type\":\"login_succeeded\",\"ingested_at\":\"2026-09-17T13:00:01.000000Z\",\"metadata\":{},\"new_role\":null,\"occurred_at\":\"2026-09-17T13:00:00.000000Z\",\"organization_id\":\"org-alpha\",\"outcome\":\"success\",\"previous_role\":null,\"request_id\":\"request-009\",\"resource_id\":null,\"resource_type\":null,\"schema_version\":\"1.0\",\"session_id\":\"session-009\",\"source\":\"fixture\",\"source_ip\":\"198.51.100.42\",\"target_actor_id\":null}"
+  }
+]

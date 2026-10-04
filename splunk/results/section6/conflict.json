@@ -1,0 +1,9 @@
+[
+  {
+    "result_type": "error",
+    "error": "conflicting_event_id",
+    "event_id": "evt-001",
+    "organization_id": "org-alpha",
+    "attempted_account": "alice@example.test"
+  }
+]

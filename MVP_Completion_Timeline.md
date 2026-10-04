@@ -72,17 +72,17 @@ Final checks: 174 backend tests with no skips, 9 frontend tests, typecheck, and 
 - [x] Add analyst status changes, notes, dispositions, and change history; prevent silent overwrites between analysts.
 - [x] Preserve case decisions during detection reruns and flag new evidence for review.
 - [x] Complete one suspicious investigation and one benign investigation that actually triggered an alert.
-- [ ] Refresh README/limitations, repeat clean setup, verify CI, and record the short demo.
+- [x] Refresh README/limitations, repeat clean setup, verify CI, and record the short demo.
 
 **Done when:** a reviewer can reproduce, investigate, and disposition alerts; access controls and recovery tests pass.
 
 **Save:** two investigation reports, updated setup documentation, and a 2–3 minute demo.
 
 Implementation, local acceptance, and a 2:13 captioned demo are recorded in
-[Section 4 verification](docs/hardening_section4.md). Final hosted CI awaits publishing
-the final revision.
+[Section 4 verification](docs/hardening_section4.md). Both hosted jobs passed for
+`f3fe14a6` in [GitHub Actions run 37150851207](https://github.com/kerry-linn/project_detection/actions/runs/37150851207).
 
-**Release gate: final hosted CI.** Proceed to integrations after critical correctness and authorization failures are resolved.
+**Release gate passed.** Proceed to integrations after critical correctness and authorization failures are resolved.
 
 ## Section 5 — Splunk
 
@@ -106,16 +106,21 @@ Live Splunk acceptance passed on the pinned 10.4.3 image; see [Section 5 status]
 
 **Reference:** A1 • **Target:** Week 6
 
-- [ ] Add a scoped read-only credential and cursor pagination over a stable export snapshot.
-- [ ] Build the Python client to fetch every page and validate responses.
-- [ ] Add timeouts, bounded retries/backoff, rate-limit handling, and clear permanent-error behavior.
-- [ ] Save received events and resume progress together so interruption cannot skip a page.
-- [ ] Export JSONL/CSV and test interrupted runs, repeated cursors, expired snapshots, and concurrent new events.
-- [ ] Compare exported event IDs/content with the source snapshot, then reuse the export in Splunk.
+- [x] Add a scoped read-only credential and cursor pagination over a stable export snapshot.
+- [x] Build the Python client to fetch every page and validate responses.
+- [x] Add timeouts, bounded retries/backoff, rate-limit handling, and clear permanent-error behavior.
+- [x] Save received events and resume progress together so interruption cannot skip a page.
+- [x] Export JSONL/CSV and test interrupted runs, repeated cursors, expired snapshots, and concurrent new events.
+- [x] Compare exported event IDs/content with the source snapshot, then reuse the export in Splunk.
 
 **Done when:** retrying or restarting produces a complete export without missing or duplicate events within the documented snapshot policy.
 
 **Save:** collector script, tests, example export, and a restart demonstration.
+
+Section 6 local acceptance: 312 backend tests with no skips, exact 200-event API
+export, a forced-kill restart, and nine matching live Splunk results.
+[Contract and evidence](docs/hardening_section6.md). Final hosted CI is pending
+publication; section 6 is not marked complete until that check passes.
 
 ## Use this routine for every section
 

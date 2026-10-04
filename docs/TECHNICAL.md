@@ -16,6 +16,8 @@ and alert evidence.
 - **Organization administrator:** manages documents and membership only within their
   organization.
 - **Lab analyst:** reads global security events and alerts and their evidence. Analysts can change case status, record dispositions, and add notes with revision checks.
+- **Event exporter:** a separately managed machine credential with only `event_export`
+  scope, permitted to read global event snapshots through `/security/events/export`.
 - **Unauthenticated user:** may attempt authentication but has no application access.
 - **Trusted collector:** may submit fixture or external events through a separate,
   credential-protected ingestion path.
@@ -125,6 +127,8 @@ identified as synthetic.
   status, and disposition.
 - `alert_events`: many-to-many evidence links between alerts and security events.
 - `case_activity`: append-only decisions and notes, with analyst author, timestamp, and revision.
+- `export_credentials`: hashed machine secrets, fixed read scope, expiry, and revocation.
+- `export_snapshots` / `export_snapshot_events`: 24-hour frozen event membership and ordinal positions; expired headers remain retry tombstones.
 - `detection_runs`: run ID, rule versions, start/end time, evaluated event-time range,
   events scanned, alerts created, alerts updated or suppressed, and run outcome.
 
@@ -199,10 +203,10 @@ for benchmark evidence, exact ranges, and recovery tests.
    collector credential. It is separate from ordinary browser routes.
 5. The detector reads validated events, records a `detection_runs` row, and writes
    deterministic alerts and evidence links.
-6. The investigation API returns events, alerts, and case data only to the lab analyst or
-   an explicitly scoped read-only collector. v0.1 serves events and alerts to the analyst;
-   case data is analyst-only; the read-only collector remains planned.
-7. A later export sends the same stored events to Splunk for manual SPL comparison.
+6. Investigation routes serve events, alerts, and case data to the lab analyst. A separate
+   machine credential can read only `/security/events/export`; it cannot access case data.
+7. The completed JSONL export feeds the pinned Splunk parity lab; 200 events and nine
+   independent R1 expectations match, including exact evidence and indexed timestamps.
 
 Ordinary clients may not assert actor identity, organization, source IP, or request outcome.
 Proxy headers are trusted only when the application is configured behind a known proxy.
@@ -212,13 +216,14 @@ The implemented collector boundary (`POST /internal/events/batch`) accepts only 
 and `cloudtrail` sources; `application` events are reserved for server routes. The server
 assigns `ingested_at`, and a client-supplied value is rejected.
 
-Days 7–9 separate three trust domains:
+The implemented trust domains, including Section 6, are:
 
 | Domain | Credential | May reach |
 | --- | --- | --- |
 | Application users (members, organization admins) | User session | `/auth/*`, `/documents*` within their organization |
-| Lab analyst | User session with the `lab_analyst` role | `/auth/*`, `/security/*`; no implicit document access |
+| Lab analyst | User session with the `lab_analyst` role | `/auth/*`, investigation routes under `/security/*` except `/security/events/export`; no implicit document access |
 | Trusted collector | Static `COLLECTOR_TOKEN`, compared with `secrets.compare_digest` | `POST /internal/events/batch` only |
+| Event exporter | Hashed, expiring, revocable machine token | `GET /security/events/export` only |
 
 A session token presented to the collector route, or the collector token presented to a
 session route, is simply not a valid credential for that realm and returns `401`. A valid
@@ -430,7 +435,8 @@ generate their expected result by calling the logic under test.
 | `GET/PATCH /documents/{id}` | Authenticated, server-authorized |
 | `GET /documents/{id}/download` | Authenticated, server-authorized; emits download event |
 | `POST /internal/events/batch` | Trusted collector only |
-| `GET /security/events?cursor=...` | Lab analyst or scoped read-only collector |
+| `GET /security/events` | Lab analyst; existing bounded array response |
+| `GET /security/events/export?cursor=...` | Separate machine credential with `event_export` scope |
 | `GET /security/alerts` | Lab analyst only |
 | `GET /security/alerts/{id}` | Lab analyst only |
 | `PATCH /security/alerts/{id}` | Lab analyst only; records state-change actor |
@@ -441,13 +447,13 @@ weaken silently. Cursor pagination uses stable ordering and documents how concur
 inserts affect traversal.
 
 Implemented in Days 5–6: `POST /internal/events/batch`, `GET /security/events` (filters and
-a bounded `limit`; cursor pagination remains planned), `GET /security/alerts`, and
+a bounded `limit`; unchanged array response), `GET /security/alerts`, and
 `GET /security/alerts/{alert_key}`.
 
 Implemented in Days 7–9: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`,
 `GET/POST /documents`, and `GET/PATCH /documents/{id}`. `/security/*` now requires a
 lab-analyst session, and `GET /security/events` gains an `actor_id` filter. The download
-route and a scoped read-only collector credential remain planned. Section 4 implements
+route remains planned. Section 6 adds the machine-only export route. Section 4 implements
 alert updates, notes, and `GET /security/alerts/{key}/activity`; see the
 [case contract and verification](hardening_section4.md).
 
@@ -458,6 +464,26 @@ navigation is a usability feature, and every boundary above is still enforced by
 Days 12–14 add no routes. Suspicious and benign scenarios are generated through the
 routes above by `scripts.generate_scenarios`, and GitHub Actions runs the backend and
 frontend tests on every push and pull request.
+
+## Section 6 export contract (implemented)
+
+Migration 008 freezes matching immutable event IDs with one transactional `INSERT SELECT`,
+ordered by `(occurred_at, event_id COLLATE "C")`. Ordinals paginate that fixed membership.
+Late or concurrently uncommitted events appear only in a new snapshot. Foreign keys
+prevent referenced-event deletion; event updates are rejected. Cleanup locks expired
+snapshot headers and skips any page transaction currently reading them.
+
+Tokens are 256-bit random secrets stored only as SHA-256 digests. Every page checks
+revocation and expiry in the page transaction. HMAC-SHA256 cursors are bound to a snapshot,
+whose header binds filters, page size, and credential. A client-generated `export_id`
+makes retries of the first request idempotent, including after a lost response. Expired
+headers are retained to prevent silently recreating an expired export.
+
+The collector commits each page and next cursor together in local SQLite, validates
+IDs/content/order/counts/cursor progress, and atomically publishes JSONL/CSV followed by
+a completion manifest. CSV formula prefixes are neutralized; JSONL retains raw values.
+See [the complete API and operational contract](hardening_section6.md) for commands,
+error statuses, restart evidence, and remaining lab limits.
 
 ## Engineering rules
 

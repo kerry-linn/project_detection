@@ -40,7 +40,8 @@ def migrated_database_url() -> str:
 def database_url(migrated_database_url: str) -> str:
     with connect(migrated_database_url) as conn:
         conn.execute(
-            "TRUNCATE case_activity, alert_replacements, alert_events, alerts, detection_runs, "
+            "TRUNCATE export_snapshot_events, export_snapshots, export_credentials, "
+            "case_activity, alert_replacements, alert_events, alerts, detection_runs, "
             "detection_checkpoints, security_events, "
             "sessions, documents, users, organizations RESTART IDENTITY"
         )

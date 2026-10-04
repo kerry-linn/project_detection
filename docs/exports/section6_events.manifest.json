@@ -1,0 +1,13 @@
+{
+  "complete": true,
+  "content_sha256": "4c3ffd0a2579eaa9a4e62d10dfced9d626dd477b3decddbaafe2503f3529766b",
+  "csv_formula_prefix": null,
+  "event_count": 200,
+  "export_id": "5dede7eb-3991-4960-9c6a-456699eb5160",
+  "file_sha256": "4c3ffd0a2579eaa9a4e62d10dfced9d626dd477b3decddbaafe2503f3529766b",
+  "filters": {},
+  "format": "jsonl",
+  "format_version": 1,
+  "snapshot_expires_at": "2026-10-05T01:33:59.052579Z",
+  "snapshot_id": "8535bf86-d122-426b-af84-1a48d0311047"
+}
