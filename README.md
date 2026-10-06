@@ -1,331 +1,68 @@
-# Security Monitoring and Investigation Platform
+# Security Monitoring Lab
 
-A portfolio-scale security monitoring lab built around a fictional document-sharing
-application. The project is designed to build practical skills in structured event
-handling, detection engineering, Python, SQL, APIs, and security investigation.
+A local security monitoring project built around a fictional document-sharing app. It
+turns login and document-access activity into security events, runs detection rules,
+and lets an analyst investigate alerts with their underlying evidence.
 
-> **Status: v0.1 release candidate.** A small document application with two fictional
-> organizations authenticates users and enforces tenant and ownership rules on the
-> server. Its login and authorization decisions become trusted security events, stored in
-> PostgreSQL alongside collector-ingested events. Two deterministic detections run over
-> those events: failed logins followed by success (R1), and repeated denied document
-> access (R2). Their results are stored as deduplicated alerts linked to raw evidence and
-> exposed only to the lab analyst, who follows each alert to its supporting events in a
-> minimal React interface. A fresh checkout reproduces both detections and their benign
-> counterparts through the real application routes. Section 4 adds analyst case decisions and bounded investigation reads.
-> All six hardening sections passed their required checks, including hosted CI and live
-> Splunk parity. Section 6 adds machine-only snapshots and a resumable Python collector.
+## What it does
 
-## Current capabilities
+- Provides a document app with user roles and organization-based access controls.
+- Records application activity and ingests events into PostgreSQL.
+- Detects failed logins followed by a success and repeated denied document access.
+- Shows alerts, supporting events, and case decisions in a React interface.
 
-- A versioned security-event contract with event-specific validation
-- Deterministic JSONL parsing, normalization, replay handling, and error reporting
-- Local authentication: Argon2id password hashes and opaque, expiring, revocable
-  database-backed sessions
-- Two organizations with member, organization-admin, and lab-analyst roles; document
-  create/read/update through the API with server-side ownership and tenant isolation
-- Server-generated `login_failed`, `login_succeeded`, `access_denied`, `document_created`,
-  and `document_updated` events; successful changes commit with their audit event
-- R1: five failed logins followed by a success within ten minutes
-- R2: five distinct denied documents within five minutes, grouped into one episode with a
-  15-minute inactivity cooldown
-- PostgreSQL storage with constraints, foreign keys, and SQL migrations
-- Trusted batch ingestion that stores replays once and rejects conflicting event IDs
-- Replay-safe alert storage: rerunning either detector never duplicates an alert
-- R2 late-event reconciliation: current alerts match full-history episodes while
-  superseded alerts retain their evidence and analyst status
-- Optional incremental R1 with overlapping event-time windows, atomic checkpoints,
-  delayed-commit reporting, and an explicit full-history backfill path
-- Alert-to-event evidence links and a recorded history of detector runs
-- Separate credentials for application users, lab analysts, write ingestion, and
-  read-only event export
-- Frozen 24-hour event snapshots and a Python collector with SQLite page checkpoints,
-  bounded retries, JSONL/CSV output, and completion manifests
-- Behavioral, persistence, API, and authorization tests against real PostgreSQL,
-  including cross-user, cross-organization, admin-scope, analyst-only, and benign
-  below-threshold cases
-- A React and TypeScript client: login, read-only document list/detail, and an analyst
-  alert list with filters and an alert detail page showing the reason, threshold check,
-  and time-ordered raw evidence; authorization stays entirely server-side
-- Scripted suspicious and benign scenarios through the real routes, a telemetry reset, and
-  a GitHub Actions workflow that runs the backend and frontend checks on every push and
-  pull request
+The backend uses Python and FastAPI. The frontend uses React and TypeScript.
+PostgreSQL runs locally through Docker Compose. This is a portfolio lab, not a
+production SIEM.
 
-Release evidence:
-
-- [Section 4: suspicious R1 case](docs/investigations/section4_R1_suspicious.md)
-- [Section 4: benign triggering R2 case](docs/investigations/section4_R2_benign.md)
-- [Investigation: failed logins followed by success for Alice](docs/investigations/R1_alice_failed_logins.md)
-- [Demo recording script](docs/DEMO.md)
-- [Days 12–14: release hardening and reproducibility](docs/DAYS_12_14.md)
-- [Hardening section 1: baseline and recovery evidence](docs/hardening_baseline.md)
-- [Hardening section 4: security, case workflow, and acceptance](docs/hardening_section4.md)
-- [Section 5: verified live Splunk parity](docs/splunk_parity.md)
-- [Section 6: snapshot export, collector, and restart evidence](docs/hardening_section6.md)
-- [Hardening section 3: processing policy, benchmarks, and recovery](docs/hardening_section3.md)
-
-Walkthroughs of the code and data flow:
-
-- [Current code map, readability review, and study walkthrough](docs/CODEBASE_WALKTHROUGH.md)
-- [Days 1–4: parsing and the R1 detection](docs/DAYS_1_4.md)
-- [Days 5–6: PostgreSQL, persistence, and APIs](docs/DAYS_5_6.md)
-- [Days 7–9: authentication, documents, application events, and R2](docs/DAYS_7_9.md)
-- [Days 10–11: the React document and investigation interface](docs/DAYS_10_11.md)
-
-## Architecture
-
-```mermaid
-flowchart LR
-    Users["Members and org admins"] --> UI["React UI"]
-    UI -->|"/auth/login, /documents"| App["Application routes"]
-    App --> Authz["Server-side authorization"]
-    Authz -->|"server-derived events"| Validation["Validation and normalization"]
-    Collector["Trusted collector"] -->|"POST /internal/events/batch"| API["Ingestion route"]
-    API --> Validation
-    Validation --> Events[(security_events)]
-    Events --> Runner["Detection runner"]
-    Runner --> Detector["Pure Python R1 and R2"]
-    Detector --> Runner
-    Runner --> Alerts[(alerts and alert_events)]
-    Events --> Reads["GET /security/*"]
-    Alerts --> Reads
-    Reads --> AnalystUI["React alert views"]
-    AnalystUI --> Analyst["Lab analyst"]
-```
-
-The React client is a thin view over the API. It hides irrelevant navigation per role,
-but every request carries the session token and FastAPI decides what it may return.
-
-PostgreSQL stores facts; the detector decides whether those facts are suspicious.
-Detection functions remain independent of HTTP and database code, so the same rule runs
-from the file-based CLI and the database-backed runner.
-
-## Core stack
-
-- Python for event processing and detection logic
-- PostgreSQL (Docker Compose) and `psycopg` with parameterized SQL
-- FastAPI for the document application, trusted ingestion, and investigation reads
-- `pwdlib[argon2]` for password hashing; opaque database-backed sessions
-- pytest for behavioral tests
-- React, TypeScript, React Router, and Vite for the document and investigation interface;
-  Vitest and Testing Library for its tests
-- GitHub Actions for continuous test runs
-
-The local project remains runnable without Splunk or AWS.
-
-## Set up from a fresh checkout
+## Run locally
 
 Requires Python 3.10+, Node.js 24.15+, and Docker.
 
-```bash
-git clone <repository-url> && cd project_detection
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[dev]'
+1. Install dependencies and create your local configuration:
 
-cp .env.example .env
-```
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -e '.[dev]'
+   cd frontend && npm ci && cd ..
+   cp .env.example .env
+   ```
 
-Edit `.env`; nothing in it is committed:
+2. In `.env`, set `POSTGRES_PASSWORD` and use the same password in `DATABASE_URL`
+   and `TEST_DATABASE_URL`. Set `COLLECTOR_TOKEN` to a random value of at least
+   16 characters and `SEED_USER_PASSWORD` to a password of at least 12 characters.
 
-- `POSTGRES_PASSWORD`: any local password. Use the same value inside `DATABASE_URL` and
-  `TEST_DATABASE_URL`.
-- `COLLECTOR_TOKEN`: at least 16 characters, for example
-  `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
-- `SEED_USER_PASSWORD`: at least 12 characters; every seeded fictional user signs in
-  with it.
+3. Start PostgreSQL and prepare the database:
 
-Create the schema, load the known starting data, and run every check:
+   ```bash
+   docker compose up -d --wait
+   python -m scripts.migrate
+   python -m scripts.seed
+   ```
 
-```bash
-docker compose up -d --wait                                     # PostgreSQL 17
-python -m scripts.migrate                                       # schema: security_lab
-python -m scripts.migrate --database-url-env TEST_DATABASE_URL  # schema: security_lab_test
-python -m scripts.seed                                          # fictional orgs, users, documents
+4. Start the API and frontend in separate terminals:
 
-python -m pytest                                                # backend, against PostgreSQL
-cd frontend && npm ci && npm test && npm run typecheck && npm run build && cd ..
-```
+   ```bash
+   uvicorn backend.api:create_app --factory --no-access-log
+   ```
 
-Migrations define the database structure; the seed fills it with the fictional
-organizations, users, and documents every scenario starts from. If `pytest` reports
-database tests as skipped, PostgreSQL or `TEST_DATABASE_URL` is not reachable.
+   ```bash
+   cd frontend && npm run dev
+   ```
 
-Seeded accounts (all use `SEED_USER_PASSWORD`):
-
-| Login | Role | Organization |
-| --- | --- | --- |
-| `alice@alpha.example.test` | member (owns `doc-alpha-001..003`) | `org-alpha` |
-| `bob@alpha.example.test` | member (owns `doc-alpha-004`) | `org-alpha` |
-| `admin@alpha.example.test` | organization admin (owns `doc-alpha-005`) | `org-alpha` |
-| `dana@beta.example.test` | member (owns `doc-beta-001..003`) | `org-beta` |
-| `admin@beta.example.test` | organization admin (owns `doc-beta-004`) | `org-beta` |
-| `analyst@lab.example.test` | lab analyst | none |
-
-## Reproduce the detections
-
-Start the API and the UI in two terminals:
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Sign in as
+`analyst@lab.example.test` with `SEED_USER_PASSWORD` to view alerts. To generate
+sample alerts, run these commands while the API is running:
 
 ```bash
-uvicorn backend.api:create_app --factory --no-access-log     # http://127.0.0.1:8000
-cd frontend && npm run dev                   # http://127.0.0.1:5173, proxies /api
-```
-
-In a third terminal, generate activity through the real application routes, then run the
-detectors:
-
-```bash
-LAB_ENV=local python -m scripts.reset_telemetry --yes --confirm-target localhost:5432/security_lab             # start from empty telemetry
 python -m scripts.generate_scenarios suspicious
-python -m scripts.run_detection                     # R1 created 1, R2 created 1
-python -m scripts.run_detection                     # rerun: created 0, unchanged 1 each
-```
-
-`suspicious` signs Bob in, opens his own `doc-alpha-004`, and requests
-`doc-alpha-001`, `-002`, `-003`, `-005` (`403`) and `doc-beta-001` (`404`): five distinct
-denied documents. It then fails five logins for Alice and signs her in correctly.
-
-Each detector prints its own run ID, rule configuration, scanned range, event and alert
-counts, duration, and outcome. If one rule fails, the command reports the other rule's
-outcome separately and exits nonzero. A crashed worker may leave a `running` row; the next
-runner marks it `abandoned` after taking the exclusive runner lock. The persisted failure
-field contains a safe category, not exception text. See the
-[baseline and recovery report](docs/hardening_baseline.md) for test evidence.
-
-R1 defaults to full history. To initialize and then use incremental processing:
-
-```bash
-python -m scripts.run_detection --rule r1 --r1-mode full
-python -m scripts.run_detection --rule r1 --r1-mode incremental
-```
-
-Incremental R1 uses a fifteen-minute overlap and one-hour catch-up chunks by default.
-A changed rule configuration or lateness allowance requires a new full baseline.
-Inspect `backfill_required` in the report: when true, run full R1 to repair history
-outside the overlap. Future login events are stored and reported as deferred until
-database time reaches them. R2 always processes complete eligible denial histories.
-See the [Section 3 policy and measurements](docs/hardening_section3.md) for exact
-boundaries, failure behavior, configuration flags, and suggested cadence.
-
-Sign in to the UI as `analyst@lab.example.test`, open **Alerts**, and follow each alert to
-its evidence. The script checks every HTTP status and stops at the first unexpected one.
-
-The benign counterpart must start from empty telemetry, otherwise the earlier alerts are
-still listed:
-
-```bash
-LAB_ENV=local python -m scripts.reset_telemetry --yes --confirm-target localhost:5432/security_lab
-python -m scripts.generate_scenarios benign
-python -m scripts.run_detection                     # R1 and R2 both detect 0
-```
-
-`benign` fails four logins for Alice before her success (below R1's threshold) and has
-Bob request the same document five times (one distinct document, below R2's threshold).
-
-To investigate and disposition two triggering cases, reset deliberately, then run:
-
-```bash
-python -m scripts.generate_scenarios triage
 python -m scripts.run_detection
 ```
 
-This produces suspicious R1 login activity and a benign R2 stale-bookmark exercise.
-Sign in as the analyst, inspect raw evidence, add a note, and close each case with a
-disposition and rationale. Reopening preserves the old decision in history. A stale
-save returns a conflict; reload and review before retrying. New evidence on a closed
-case preserves the decision and flags it for review. All list filters run server-side;
-pages display matching/evidence totals. See the [case and pagination policy](docs/hardening_section4.md).
+## Documentation
 
-The collector path and the file-only tools from Days 1–4 still work:
-
-```bash
-python -m scripts.replay_events fixtures/days_1_2.jsonl   # needs the API running
-python -m scripts.parse_events fixtures/days_1_2.jsonl
-python -m scripts.detect_r1 fixtures/days_1_2.jsonl
-```
-
-## Optional Splunk exercise
-
-[Section 5 setup and annotated SPL](splunk/README.md) exports 200 canonical synthetic
-events and compares full batch Python R1 against independently expected results and
-a pinned local Splunk container. It includes timestamp configuration, import replay
-protection, and a separate deliberate replay test. See [actual verification status](docs/splunk_parity.md)
-before claiming SPL parity.
-
-## Read-only event export
-
-Apply migrations, then create a separately managed `event_export` credential:
-
-```bash
-python -m scripts.migrate
-mkdir -p .exports
-python -m scripts.export_credentials create --name local-export --days 30 --output .exports/token
-export EVENT_EXPORT_TOKEN="$(cat .exports/token)"
-python -m scripts.collect_events --state .exports/run.sqlite --output .exports/events.jsonl --page-size 100
-```
-
-Run the API first. Repeat the exact collector command to resume an interrupted run.
-Use a **new state file** for a new snapshot; expiry after 24 hours requires that explicit
-choice. Credentials read event fields across the lab's organizations and have no
-other authenticated privilege. The analyst's `GET /security/events` array is unchanged.
-See [Section 6](docs/hardening_section6.md) for filters, credential rotation/revocation,
-CSV, retry limits, manifests, and a recorded forced-kill restart.
-
-## Reset
-
-| Goal | Commands |
-| --- | --- |
-| Replay a scenario from the same starting state | `LAB_ENV=local python -m scripts.reset_telemetry --yes --confirm-target localhost:5432/security_lab` |
-| Rebuild everything from nothing | `docker compose down -v`, then the Compose, both migrate, and seed steps above |
-
-`reset_telemetry` deletes case history, events, alerts, replacement links, evidence links, detector runs, checkpoints, and sessions from
-the `DATABASE_URL` database and keeps the seeded organizations, users, documents, and export credentials. Active export snapshots block reset until
-their 24-hour expiry; completed collectors still retain that server-side protection.
-Run it without flags first to inspect the connected target. Destructive reset requires
-`LAB_ENV=local`, `--yes`, and the exact printed `host:port/database` via
-`--confirm-target`; adjust the example for your own port/database. `docker compose down -v` deletes the
-PostgreSQL volume, including the test database. Neither requires editing PostgreSQL by
-hand.
-
-## Known limitations
-
-- Local lab only: Vite development server, no HTTPS, no production hosting.
-- No account lockout or rate limiting; lockout is omitted so R1 has signal.
-- No MFA, password reset, or membership/role management.
-- Every seeded user shares one lab password.
-- The browser keeps the session token in `sessionStorage`, not an `HttpOnly` cookie.
-- Documents are read-only in the UI; create and update exist only in the API.
-- Case decisions and notes are analyst-only; history is append-only, but database owners
-  can bypass lab controls.
-- Lists and evidence use live offset pages; concurrent changes can shift page boundaries.
-  `GET /security/events` remains bounded; frozen export uses the separate machine-only
-  `/security/events/export` route. Snapshots materialize IDs, consume storage proportional
-  to event count, and have no per-credential concurrency quota.
-- R2 still scans full eligible history; R1 full initialization/backfill does too.
-  Incremental R1 bounds the time span loaded per chunk, not the number of rows or
-  evidence links. No scheduler is installed.
-- Behind Docker or the Vite proxy, `source_ip` is often `127.0.0.1` or a gateway.
-- Unauthorized `/security/*` requests are rejected but not recorded as events, and a
-  failed audit write leaves that attempt unrecorded.
-- Stored events are not tamper-proof.
-- Splunk fixture/export/search tooling is available; live parity status is recorded in
-  [the Section 5 report](docs/splunk_parity.md). No AWS, R3, or R4 yet.
-
-## What is next
-
-The current hardening plan is [the six-section timeline](MVP_Completion_Timeline.md).
-Sections 1–3 cover runner recovery, R2 late-event reconciliation, and measured
-incremental R1 processing. Sections 4–5 passed their investigation and live Splunk gates.
-Section 6 passed export acceptance and hosted CI; see [the verification record](docs/hardening_section6.md).
-Later work includes stateful R2, R3/R4, CloudTrail/S3, and public deployment.
-
-See [Technical specification](docs/TECHNICAL.md) for the data contract, security model,
-and rule specifications. See [Project roadmap](security_project_roadmap.txt) for the
-planned milestones and release scope.
-
-## Scope
-
-This is a controlled portfolio lab, not a production SIEM or professional SOC
-experience. Its threshold detections identify activity worth investigating; they do not
-prove account compromise or data exfiltration. Fixtures contain only fictional data and
-must never include credentials, tokens, cookies, or document contents.
+- [Demo walkthrough](docs/DEMO.md)
+- [Technical specification](docs/TECHNICAL.md)
+- [Codebase walkthrough](docs/CODEBASE_WALKTHROUGH.md)
+- [Splunk exercise](splunk/README.md)
